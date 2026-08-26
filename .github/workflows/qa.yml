@@ -16,6 +16,19 @@ jobs:
       - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh
       - run: python scripts/ancestry_check.py
       - run: python scripts/config_static_check.py
+      - run: python scripts/promotion_check.py
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
+      - name: Live qualification contract (non-live)
+        run: python scripts/live_qualification.py
+      - name: Assert CI does not fake live qualification
+        run: |
+          python - <<'PY'
+          import json
+          q=json.load(open('qa/LIVE_QUALIFICATION.json'))
+          assert q['mode']=='CONTRACT_ONLY'
+          assert q['overall_state']=='NOT_QUALIFIED'
+          assert all(v['state'] != 'PASS' for v in q['dimensions'].values())
+          print('LIVE_CLAIM_HYGIENE_PASS')
+          PY
