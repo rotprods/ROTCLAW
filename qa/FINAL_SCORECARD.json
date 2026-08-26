@@ -1,0 +1,7 @@
+{
+  "scale":"0-10 evidence-backed",
+  "artifact_layer_mean":10.0,
+  "live_openclaw_mean":0.0,
+  "rule":"Blocked/unexecuted live domains are never averaged into production readiness.",
+  "live_unqualified":["provider_routing_live","model_quality_live","tool_policy_runtime","sandbox_runtime_openclaw","live_security_openclaw","production_reliability_openclaw"]
+}

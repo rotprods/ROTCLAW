@@ -1,0 +1,7 @@
+{
+  "iterations":50,
+  "final_clean_iterations":50,
+  "assertions":550,
+  "failures_after_remediation":0,
+  "known_remediations":["context budget integrity-envelope overflow","recovery manifest self-reference"]
+}

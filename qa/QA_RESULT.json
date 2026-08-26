@@ -1,0 +1,7 @@
+{
+  "passed":28,
+  "failed":0,
+  "score_pct":100.0,
+  "failures":[],
+  "benchmarks":{"graph_hash_ms_p50":0.015302,"graph_hash_ms_p95":0.017166,"preflight_seconds":0.09490902599998208,"node_count":8,"edge_count":7}
+}

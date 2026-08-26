@@ -1,0 +1,6 @@
+{
+  "mutations":10000,
+  "detected":10000,
+  "detection_rate":1.0,
+  "baseline_valid":true
+}

@@ -1,0 +1,5 @@
+{
+  "schema":"rot.runtime-capabilities.v1",
+  "policy":{"runtime_facts_ttl_seconds":3600,"fail_closed_on_stale":true},
+  "required_probes":["captured_at_utc","hostname","kernel","cpu_visible","cpu_max","memory_max","memory_current","disk","git","python","node","npm","docker","openclaw","CapEff","NoNewPrivs","Seccomp"]
+}

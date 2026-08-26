@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://rotprods.github.io/ROTCLAW/schemas/system-graph.v2.json",
+  "title":"ROT System Graph v2",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema","captured_at_utc","nodes","edges","epistemic_note"],
+  "properties":{
+    "schema":{"const":"rot.system-graph.v2"},
+    "captured_at_utc":{"type":"string"},
+    "epistemic_note":{"type":"string","minLength":20},
+    "nodes":{"type":"array","minItems":1,"items":{"type":"object","required":["id","kind","label","epistemic_status","provenance_ref"],"properties":{"id":{"type":"string","minLength":1},"kind":{"type":"string","minLength":1},"label":{"type":"string","minLength":1},"epistemic_status":{"enum":["OBSERVED","CANONICAL","INFERRED","PLANNED","BLOCKED"]},"provenance_ref":{"type":"string","minLength":1}},"additionalProperties":true}},
+    "edges":{"type":"array","items":{"type":"object","required":["from","to","relation","epistemic_status","provenance_ref"],"properties":{"from":{"type":"string","minLength":1},"to":{"type":"string","minLength":1},"relation":{"type":"string","minLength":1},"epistemic_status":{"enum":["OBSERVED","CANONICAL","INFERRED","PLANNED","BLOCKED"]},"provenance_ref":{"type":"string","minLength":1}},"additionalProperties":true}}
+  }
+}

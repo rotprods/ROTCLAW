@@ -1,0 +1,9 @@
+{
+  "iterations":80000,
+  "queries":8,
+  "deterministic":true,
+  "context_compile_ms_p50":0.022323,
+  "context_compile_ms_p95":0.023845,
+  "context_compile_ms_p99":0.044005,
+  "output_bytes_p50":1181.5
+}

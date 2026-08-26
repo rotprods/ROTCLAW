@@ -1,0 +1,11 @@
+{
+  "graph_hash_iterations":100000,
+  "graph_hash_unique":1,
+  "graph_hash_ms_p50":0.126221,
+  "graph_hash_ms_p95":0.169704,
+  "graph_hash_ms_p99":0.311761,
+  "adversarial_mutations":100000,
+  "adversarial_detected":100000,
+  "adversarial_detection_rate":1.0,
+  "recovery_manifest_deterministic":true
+}

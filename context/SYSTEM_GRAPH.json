@@ -1,0 +1,24 @@
+{
+  "schema": "rot.system-graph.v2",
+  "captured_at_utc": "2026-08-26T07:52:00Z",
+  "nodes": [
+    {"id":"operator","kind":"authority","label":"Human operator / final authority","epistemic_status":"CANONICAL","provenance_ref":"context/ACTA_DE_CONSCIENCIA.md"},
+    {"id":"rotclaw","kind":"control_plane","label":"ROTCLAW policy + context + QA","epistemic_status":"CANONICAL","provenance_ref":"README.md"},
+    {"id":"runtime-host","kind":"compute","label":"Runtime host (must be probed)","epistemic_status":"OBSERVED","provenance_ref":"context/RUNTIME_PREFLIGHT.sh"},
+    {"id":"openclaw","kind":"agent_runtime","label":"OpenClaw runtime","epistemic_status":"PLANNED","provenance_ref":"VALIDATION.md"},
+    {"id":"model-router","kind":"gateway","label":"Loopback model router","epistemic_status":"CANONICAL","provenance_ref":"router/model_router.py"},
+    {"id":"ollama-upstream","kind":"model_provider","label":"Ollama-compatible upstream","epistemic_status":"PLANNED","provenance_ref":"config/model-routing.json"},
+    {"id":"github","kind":"scm","label":"GitHub scoped repositories","epistemic_status":"OBSERVED","provenance_ref":"AGENTS.md"},
+    {"id":"private-memory","kind":"storage","label":"Private local memory pack (not committed)","epistemic_status":"PLANNED","provenance_ref":"context/MEMORY.md"}
+  ],
+  "edges": [
+    {"from":"operator","to":"rotclaw","relation":"authorizes","epistemic_status":"CANONICAL","provenance_ref":"AGENTS.md"},
+    {"from":"rotclaw","to":"runtime-host","relation":"probes_and_governs","epistemic_status":"CANONICAL","provenance_ref":"context/RUNTIME_PREFLIGHT.sh"},
+    {"from":"runtime-host","to":"openclaw","relation":"may_run","epistemic_status":"PLANNED","provenance_ref":"VALIDATION.md"},
+    {"from":"openclaw","to":"model-router","relation":"planned_model_calls","epistemic_status":"PLANNED","provenance_ref":"config/openclaw.example.json"},
+    {"from":"model-router","to":"ollama-upstream","relation":"planned_upstream_calls","epistemic_status":"PLANNED","provenance_ref":"config/model-routing.json"},
+    {"from":"openclaw","to":"github","relation":"planned_scoped_repo_work","epistemic_status":"PLANNED","provenance_ref":"AGENTS.md"},
+    {"from":"rotclaw","to":"private-memory","relation":"may_consume_bounded_private_context","epistemic_status":"PLANNED","provenance_ref":"context/MEMORY.md"}
+  ],
+  "epistemic_note": "Public graph only. Planned edges are not execution proof. Private operator/project memory is intentionally excluded from this repository."
+}
