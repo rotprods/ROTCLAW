@@ -1,0 +1,31 @@
+{
+  "models": {"providers":{"allow":["rot-router"],"deny":[]}},
+  "network": {"privateNetwork":{"allow":false}},
+  "gateway": {
+    "exposure":{"allowNonLoopbackBind":false,"allowTailscaleFunnel":false},
+    "remote":{"allow":false}
+  },
+  "agents": {"workspace":{"allowedAccess":["rw"]}},
+  "dataHandling": {
+    "sensitiveLogging":{"requireRedaction":true},
+    "telemetry":{"denyContentCapture":true},
+    "memory":{"denySessionTranscriptIndexing":true}
+  },
+  "secrets": {"requireManagedProviders":false,"denySources":["exec"],"allowInsecureProviders":false},
+  "tools": {
+    "profiles":{"allow":["coding"]},
+    "fs":{"requireWorkspaceOnly":true},
+    "exec":{"allowSecurity":["allowlist"],"requireAsk":["on-miss"],"allowHosts":["sandbox"]},
+    "elevated":{"allow":false}
+  },
+  "sandbox": {
+    "requireMode":["all"],
+    "allowBackends":["docker"],
+    "containers": {
+      "denyHostNetwork":true,
+      "denyContainerNamespaceJoin":true,
+      "denyContainerRuntimeSocketMounts":true,
+      "denyUnconfinedProfiles":true
+    }
+  }
+}
