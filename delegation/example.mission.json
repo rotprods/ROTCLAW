@@ -1,0 +1,15 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "rotclaw-example-001",
+  "goal": "Validate a documentation-only delegated mission without writing outside the delegation namespace.",
+  "risk_class": "A1",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "main",
+  "work_branch": "agent/example-doc-mission",
+  "allowed_paths": ["delegation/**","docs/**"],
+  "denied_paths": [".secrets/**",".github/workflows/**","config/**"],
+  "allowed_actions": ["read","edit","test","commit"],
+  "acceptance": ["Mission schema validates", "No denied path is changed", "Handoff records executed evidence"],
+  "requires_live": false,
+  "expires_at_utc": null
+}
