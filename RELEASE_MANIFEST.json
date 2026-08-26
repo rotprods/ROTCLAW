@@ -11,11 +11,13 @@
   ],
   "required_components": [
     "AGENTS.md","SOUL.md","SECURITY.md",
+    "brain/BRAIN_ARCHITECTURE_V2.md","brain/ANCESTRY_GATE.md","docs/PROMOTION_PROTOCOL.md",
     "config/openclaw.example.json","config/model-routing.json","config/policy.jsonc",
-    "scripts/install.sh","scripts/bootstrap-private-env.sh","scripts/run-router.sh","scripts/verify-live.sh","scripts/ancestry_check.py","scripts/config_static_check.py",
+    "scripts/install.sh","scripts/bootstrap-private-env.sh","scripts/run-router.sh","scripts/verify-live.sh","scripts/ancestry_check.py","scripts/config_static_check.py","scripts/promotion_check.py","scripts/live_qualification.py",
+    "schemas/live-qualification.schema.json",
     "security/THREAT_MODEL.md","workspace/IDENTITY.md","workspace/TOOLS.md",
     "skills/define-goal/SKILL.md","skills/gauntlet-loop/SKILL.md","skills/graph-engineering/SKILL.md","skills/model-router/SKILL.md","skills/vibecarrusel/SKILL.md",
-    "context/SYSTEM_GRAPH.json","context/RUNTIME_PREFLIGHT.sh","router/model_router.py","qa/GAUNTLET_50_LEDGER.json","brain/ANCESTRY_GATE.md"
+    "context/SYSTEM_GRAPH.json","context/RUNTIME_PREFLIGHT.sh","router/model_router.py","qa/GAUNTLET_50_LEDGER.json"
   ],
   "live_qualification": "NOT_YET_VERIFIED"
 }
