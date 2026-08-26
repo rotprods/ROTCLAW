@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
-import argparse, datetime as dt, json, os, shutil, socket, subprocess, sys, time, urllib.request, urllib.error
+import argparse, datetime as dt, json, os, re, shutil, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DIMS = [
-    "openclaw_cli",
-    "router_health",
-    "provider_catalog",
-    "model_routing",
-    "tool_policy_runtime",
-    "sandbox_isolation",
-    "git_branch_isolation",
-    "restart_recovery",
-    "concurrency",
-    "production_soak",
+DIMS = ["openclaw_cli","router_health","provider_catalog","model_routing","tool_policy_runtime","sandbox_isolation","git_branch_isolation","restart_recovery","concurrency","production_soak"]
+SECRET_PATTERNS = [
+    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+"),
+    re.compile(r"(?i)((?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*)[^\s,;\"']+"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
 ]
 
+def sanitize(value, limit=700):
+    text=str(value).replace("\x00","")
+    for pat in SECRET_PATTERNS:
+        text=pat.sub(lambda m: (m.group(1) if m.lastindex else "")+"[REDACTED]", text)
+    return text[-limit:]
+
 def result(state, evidence, latency=None):
-    return {"state": state, "evidence": evidence, "latency_ms": latency}
+    return {"state": state, "evidence": sanitize(evidence), "latency_ms": latency}
 
 def run(cmd, timeout=20):
     t=time.perf_counter()
     try:
         p=subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, (p.stdout+p.stderr).strip()[-1200:], round((time.perf_counter()-t)*1000,3)
+        return p.returncode, sanitize((p.stdout+p.stderr).strip(),1200), round((time.perf_counter()-t)*1000,3)
     except Exception as e:
-        return 99, f"{type(e).__name__}: {e}", round((time.perf_counter()-t)*1000,3)
+        return 99, sanitize(f"{type(e).__name__}: {e}"), round((time.perf_counter()-t)*1000,3)
 
 def http_get(url, token=None, timeout=5):
     headers={}
@@ -35,9 +35,9 @@ def http_get(url, token=None, timeout=5):
     try:
         with urllib.request.urlopen(req,timeout=timeout) as r:
             body=r.read(65536).decode("utf-8","replace")
-            return r.status, body, round((time.perf_counter()-t)*1000,3)
+            return r.status, sanitize(body), round((time.perf_counter()-t)*1000,3)
     except Exception as e:
-        return 0, f"{type(e).__name__}: {e}", round((time.perf_counter()-t)*1000,3)
+        return 0, sanitize(f"{type(e).__name__}: {e}"), round((time.perf_counter()-t)*1000,3)
 
 def git_sha():
     rc,out,_=run(["git","rev-parse","HEAD"],5)
@@ -59,16 +59,17 @@ def live():
 
     router=os.environ.get("ROT_ROUTER_BASE_URL","http://127.0.0.1:8787").rstrip("/")
     token=os.environ.get("ROT_ROUTER_TOKEN")
-    status,body,ms=http_get(router+"/healthz",token); d["router_health"]=result("PASS" if 200<=status<300 else "FAIL",body[:500],ms)
-    status,body,ms=http_get(router+"/v1/models",token); d["provider_catalog"]=result("PASS" if 200<=status<300 else "FAIL",body[:700],ms)
+    status,body,ms=http_get(router+"/healthz",token); d["router_health"]=result("PASS" if 200<=status<300 else "FAIL",body,ms)
+    status,body,ms=http_get(router+"/v1/models",token); d["provider_catalog"]=result("PASS" if 200<=status<300 else "FAIL",body,ms)
 
-    # Model routing requires explicit opt-in because it may incur provider cost.
     if os.environ.get("ROT_LIVE_MODEL_TESTS")=="1":
         aliases=[x.strip() for x in os.environ.get("ROT_MODEL_ALIASES","glm-5.2,minimax-m3,kimi-k2.6,deepseek-v4-flash").split(",") if x.strip()]
         failures=[]; timings=[]
         for model in aliases:
             payload=json.dumps({"model":model,"messages":[{"role":"user","content":"Reply exactly: ROT_OK"}],"max_tokens":8}).encode()
-            req=urllib.request.Request(router+"/v1/chat/completions",data=payload,headers={"Content-Type":"application/json",**({"Authorization":"Bearer "+token} if token else {})},method="POST")
+            headers={"Content-Type":"application/json"}
+            if token: headers["Authorization"]="Bearer "+token
+            req=urllib.request.Request(router+"/v1/chat/completions",data=payload,headers=headers,method="POST")
             t=time.perf_counter()
             try:
                 with urllib.request.urlopen(req,timeout=60) as r:
@@ -76,10 +77,11 @@ def live():
                     if r.status<200 or r.status>=300: failures.append(model+":http"+str(r.status))
                     elif "ROT_OK" not in txt: failures.append(model+":unexpected-response")
             except Exception as e: failures.append(model+":"+type(e).__name__)
-        d["model_routing"]=result("PASS" if not failures else "FAIL","aliases="+",".join(aliases)+("") if not failures else "; failures="+",".join(failures), round(max(timings),3) if timings else None)
+        evidence="aliases="+",".join(aliases)
+        if failures: evidence += "; failures="+",".join(failures)
+        d["model_routing"]=result("PASS" if not failures else "FAIL",evidence,round(max(timings),3) if timings else None)
     else: d["model_routing"]=result("BLOCKED","Set ROT_LIVE_MODEL_TESTS=1 to execute cost-bearing model inference.")
 
-    # Remaining dimensions need dedicated host/runtime fixtures; absence must never become PASS.
     d["tool_policy_runtime"]=result("BLOCKED","Requires instrumented OpenClaw tool-policy fixture.")
     d["sandbox_isolation"]=result("BLOCKED","Requires actual sandbox/container isolation fixture.")
     branch=os.environ.get("ROT_EXPECTED_BRANCH")
