@@ -6,21 +6,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$HOME/.openclaw"
 WORKSPACE="$STATE/workspace-rot"
 CONFIG="$STATE/openclaw.json"
+ENV_FILE="$STATE/.env"
 command -v node >/dev/null || { echo 'node is required' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npm is required' >&2; exit 1; }
 command -v openclaw >/dev/null || { echo 'openclaw must be installed explicitly on the host; refusing implicit global install' >&2; exit 2; }
+[[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE; run scripts/bootstrap-private-env.sh first." >&2; exit 2; }
 mkdir -p "$STATE" "$WORKSPACE"
 if [[ -e "$CONFIG" ]]; then cp "$CONFIG" "$CONFIG.backup.$(date +%Y%m%d%H%M%S)"; fi
 cp "$ROOT/config/openclaw.example.json" "$CONFIG"
+cp "$ROOT/config/policy.jsonc" "$WORKSPACE/policy.jsonc"
 cp "$ROOT/AGENTS.md" "$WORKSPACE/AGENTS.md"
 cp "$ROOT/SOUL.md" "$WORKSPACE/SOUL.md"
 cp "$ROOT/workspace/IDENTITY.md" "$WORKSPACE/IDENTITY.md"
 cp "$ROOT/workspace/TOOLS.md" "$WORKSPACE/TOOLS.md"
 mkdir -p "$WORKSPACE/skills"
 cp -R "$ROOT/skills/." "$WORKSPACE/skills/"
-chmod 600 "$CONFIG"
+chmod 600 "$CONFIG" "$ENV_FILE"
 chmod -R go-rwx "$WORKSPACE"
 python3 "$ROOT/scripts/ancestry_check.py"
+python3 "$ROOT/scripts/config_static_check.py"
 openclaw config validate
 openclaw doctor --lint
-printf 'Installed config: %s\nWorkspace: %s\n' "$CONFIG" "$WORKSPACE"
+openclaw policy check --severity-min error
+printf 'Installed config: %s\nWorkspace: %s\nPolicy: %s\n' "$CONFIG" "$WORKSPACE" "$WORKSPACE/policy.jsonc"
