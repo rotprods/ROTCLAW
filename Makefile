@@ -1,11 +1,13 @@
-.PHONY: qa ancestry config-check promotion context preflight bootstrap router recovery verify-live live-contract live-qualify
+.PHONY: qa ancestry config-check promotion mission context preflight bootstrap router recovery verify-live live-contract live-qualify
 ancestry:
 	python3 scripts/ancestry_check.py
 config-check:
 	python3 scripts/config_static_check.py
 promotion:
 	python3 scripts/promotion_check.py
-qa: ancestry config-check promotion
+mission:
+	python3 scripts/mission_gate.py delegation/example.mission.json
+qa: ancestry config-check promotion mission
 	python3 scripts/qa.py
 	python3 scripts/adversarial.py
 	python3 scripts/benchmark.py
