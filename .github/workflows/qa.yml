@@ -13,8 +13,9 @@ jobs:
         with:
           python-version: '3.13'
       - run: python -m py_compile scripts/*.py router/*.py
-      - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/verify-live.sh
+      - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh
       - run: python scripts/ancestry_check.py
+      - run: python scripts/config_static_check.py
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
