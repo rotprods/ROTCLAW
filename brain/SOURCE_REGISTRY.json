@@ -1,0 +1,20 @@
+{
+  "schema": "rotclaw.source-registry.v1",
+  "captured_at": "2026-08-26",
+  "authority_order": [
+    "executed_test_evidence",
+    "github_published_state",
+    "persisted_snapshots",
+    "current_worker",
+    "conversation_intent",
+    "unsupported_historical_claims"
+  ],
+  "sources": [
+    {"id":"v1","artifact":"openclaw-rot-os.tar.gz","release_type":"FULL_OVERLAY","status":"RECOVERABLE","note":"contains original operational config/security/workspace/skills"},
+    {"id":"v2","artifact":"openclaw-rot-os-v2-consciousness.tar.gz","release_type":"CONTEXT_ONLY","status":"RECOVERABLE","note":"must not supersede v1"},
+    {"id":"v3","artifact":"openclaw-rot-os-v3-gauntlet.tar.gz","release_type":"CONTEXT_PLUS_EVIDENCE","status":"RECOVERABLE"},
+    {"id":"v4","artifact":"openclaw-rot-os-v4-gauntlet50.tar.gz","release_type":"CONTEXT_PLUS_EVIDENCE","status":"PERSISTED_EVIDENCE"},
+    {"id":"v5","artifact":"ROTCLAW published lineage","release_type":"PUBLISHED_CONTROL_PLANE","status":"CANONICAL_PUBLIC"},
+    {"id":"upstream","artifact":"openclaw/openclaw","release_type":"UPSTREAM_DEPENDENCY","status":"PIN_REQUIRED_FOR_FULL_RELEASE"}
+  ]
+}
