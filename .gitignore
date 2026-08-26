@@ -9,3 +9,5 @@ __pycache__/
 node_modules/
 coverage/
 *.log
+qa/LIVE_QUALIFICATION.json
+qa/CROSS_PLANE_CHECKPOINT.json
