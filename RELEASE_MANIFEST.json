@@ -1,0 +1,20 @@
+{
+  "schema": "rotclaw.release-manifest.v1",
+  "release": "v6",
+  "release_type": "FULL_COMPOSITE",
+  "status": "RELEASE_CANDIDATE",
+  "base_public_lineage": "rotprods/ROTCLAW@main",
+  "ancestry": [
+    {"source":"v1","type":"FULL_OVERLAY","role":"restore operational config/security/workspace/skills"},
+    {"source":"v3/v4","type":"CONTEXT_PLUS_EVIDENCE","role":"retain graph/epistemics/QA/recovery"},
+    {"source":"v5","type":"PUBLISHED_CONTROL_PLANE","role":"retain router/provider template/CI/public-safe brain"}
+  ],
+  "required_components": [
+    "AGENTS.md","SOUL.md","SECURITY.md","config/openclaw.example.json","config/model-routing.json",
+    "scripts/install.sh","scripts/bootstrap-private-env.sh","scripts/verify-live.sh","scripts/ancestry_check.py",
+    "security/THREAT_MODEL.md","workspace/IDENTITY.md","workspace/TOOLS.md",
+    "skills/define-goal/SKILL.md","skills/gauntlet-loop/SKILL.md","skills/graph-engineering/SKILL.md","skills/model-router/SKILL.md",
+    "context/SYSTEM_GRAPH.json","context/RUNTIME_PREFLIGHT.sh","router/model_router.py","qa/GAUNTLET_50_LEDGER.json","brain/ANCESTRY_GATE.md"
+  ],
+  "live_qualification": "NOT_YET_VERIFIED"
+}
