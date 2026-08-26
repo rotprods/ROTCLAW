@@ -17,6 +17,8 @@ jobs:
       - run: python scripts/ancestry_check.py
       - run: python scripts/config_static_check.py
       - run: python scripts/promotion_check.py
+      - name: Delegated mission contract
+        run: python scripts/mission_gate.py delegation/example.mission.json
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
