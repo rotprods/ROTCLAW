@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rot.local/schemas/live-qualification.v1.json",
+  "title": "ROTCLAW Live Qualification Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "captured_at_utc", "git_sha", "mode", "dimensions", "overall_state"],
+  "properties": {
+    "schema": {"const": "rotclaw.live-qualification.v1"},
+    "captured_at_utc": {"type": "string", "format": "date-time"},
+    "git_sha": {"type": "string", "minLength": 7},
+    "mode": {"enum": ["CONTRACT_ONLY", "LIVE"]},
+    "overall_state": {"enum": ["NOT_QUALIFIED", "PARTIALLY_QUALIFIED", "QUALIFIED"]},
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["state", "evidence"],
+        "properties": {
+          "state": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]},
+          "evidence": {"type": "string"},
+          "latency_ms": {"type": ["number", "null"]}
+        }
+      }
+    }
+  }
+}
