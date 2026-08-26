@@ -1,0 +1,18 @@
+{
+  "schema": "rot.model-routing.v1",
+  "profiles": {
+    "balanced": "deepseek-v4-flash",
+    "coding": "deepseek-v4-flash",
+    "research": "kimi-k2.6",
+    "creative": "minimax-m3",
+    "reasoning": "glm-5.2",
+    "fast": "deepseek-v4-flash"
+  },
+  "aliases": {
+    "glm": "glm-5.2",
+    "minimax": "minimax-m3",
+    "kimi": "kimi-k2.6",
+    "deepseek": "deepseek-v4-flash"
+  },
+  "validation_policy": "models are NOT marked live until provider discovery + smoke inference passes"
+}

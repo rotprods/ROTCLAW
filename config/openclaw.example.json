@@ -1,0 +1,10 @@
+{
+  "note": "Template only. Validate keys against the installed OpenClaw version before applying.",
+  "model_provider": {
+    "base_url": "http://127.0.0.1:8787/v1",
+    "api": "openai-compatible",
+    "auth_env": "ROT_ROUTER_TOKEN"
+  },
+  "default_model": "balanced",
+  "workspace": "~/.openclaw/workspace-roberto"
+}
