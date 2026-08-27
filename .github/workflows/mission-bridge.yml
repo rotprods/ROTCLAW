@@ -1,0 +1,104 @@
+name: mission-bridge
+
+on:
+  push:
+    branches:
+      - reconstruct/v6-full-composite
+    paths:
+      - 'delegation/inbox/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.3'
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Resolve mission
+        id: mission
+        shell: bash
+        run: |
+          set -euo pipefail
+          mission="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^delegation/inbox/.*\.json$' | head -n1)"
+          test -n "$mission"
+          python scripts/mission_gate.py "$mission"
+          echo "path=$mission" >> "$GITHUB_OUTPUT"
+
+      - name: Require provider secret
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OLLAMA_API_KEY:-}" || { echo 'OLLAMA_API_KEY secret is not configured'; exit 78; }
+
+      - name: Install OpenClaw
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g openclaw@2026.8.1-beta.3
+          openclaw --version
+
+      - name: Start ROT router with provider secret isolated
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          ROT_ROUTER_TOKEN: mission-bridge-local-token
+          ROT_UPSTREAM_BASE_URL: https://ollama.com/v1
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python3 router/model_router.py > /tmp/rot-router.log 2>&1 &
+          echo $! > /tmp/rot-router.pid
+          for i in $(seq 1 60); do
+            curl -fsS -H 'Authorization: Bearer mission-bridge-local-token' http://127.0.0.1:8787/healthz >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/rot-router.log
+          exit 1
+
+      - name: Execute mission through OpenClaw
+        env:
+          ROT_ROUTER_TOKEN: mission-bridge-local-token
+          ROT_BRIDGE_MISSION: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset OLLAMA_API_KEY
+          python3 scripts/mission_bridge.py "$ROT_BRIDGE_MISSION" --out delegation/outbox
+
+      - name: Enforce delegated diff boundary
+        env:
+          ROT_BRIDGE_MISSION: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/mission_gate.py "$ROT_BRIDGE_MISSION" --check-diff
+
+      - name: Redact evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/redact_bridge_evidence.py delegation/outbox /tmp/rot-router.log
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rotclaw-mission-${{ github.sha }}
+          path: |
+            delegation/outbox/
+            /tmp/rot-router.log
+          if-no-files-found: error
+          retention-days: 7
