@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/openclaw-host-qualification.yml'
       - 'scripts/gha_openclaw_qualification.sh'
+      - 'scripts/mock_openai_provider.py'
+      - 'qualification/Dockerfile.openclaw-sandbox'
       - 'config/openclaw.example.json'
   workflow_dispatch:
 permissions:
@@ -27,9 +29,9 @@ jobs:
           node --version
           npm --version
           docker --version
-      - name: Qualify upstream OpenClaw 2026.8.1
+      - name: Qualify published OpenClaw 2026.8.1-beta.3
         env:
-          OPENCLAW_VERSION: '2026.8.1'
+          OPENCLAW_SPEC: '2026.8.1-beta.3'
         run: bash scripts/gha_openclaw_qualification.sh qa/gha-host
       - name: Publish qualification summary
         run: cat qa/gha-host/QUALIFICATION.json
