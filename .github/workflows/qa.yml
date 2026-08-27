@@ -24,6 +24,24 @@ jobs:
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
+      - name: Node01 systemd dry-run contract
+        shell: bash
+        run: |
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/state" "$tmp/config"
+          printf 'OLLAMA_API_KEY=placeholder\nROT_ROUTER_TOKEN=placeholder\n' > "$tmp/config/node01.env"
+          chmod 600 "$tmp/config/node01.env"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/state/start-router.sh"
+          chmod 700 "$tmp/state/start-router.sh"
+          HOME="$tmp" \
+          XDG_CONFIG_HOME="$tmp/xdg" \
+          ROTCLAW_STATE_ROOT="$tmp/state" \
+          ROTCLAW_CONFIG_ROOT="$tmp/config" \
+          ROTCLAW_SERVICE_DRY_RUN=1 \
+          bash scripts/node01_install_service.sh
+          test -f "$tmp/xdg/systemd/user/rotclaw-router.service"
+          grep -q 'NoNewPrivileges=true' "$tmp/xdg/systemd/user/rotclaw-router.service"
+          grep -q 'ProtectSystem=strict' "$tmp/xdg/systemd/user/rotclaw-router.service"
       - name: Node01 checkpoint contract
         run: python scripts/node01_checkpoint.py
       - name: Live qualification contract (non-live)
