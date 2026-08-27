@@ -1,0 +1,66 @@
+name: real-provider-qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      deepseek_model:
+        description: "DeepSeek model id exposed by upstream"
+        required: true
+        default: "deepseek-v4-flash"
+      kimi_model:
+        description: "Kimi model id exposed by upstream"
+        required: true
+        default: "kimi-k2.6"
+      glm_model:
+        description: "GLM model id exposed by upstream"
+        required: true
+        default: "glm-5.2"
+      minimax_model:
+        description: "MiniMax model id exposed by upstream"
+        required: true
+        default: "minimax-m3"
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-real-provider:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENCLAW_SPEC: 2026.8.1-beta.3
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      ROT_ROUTER_TOKEN: qualification-local-token
+      ROT_UPSTREAM_BASE_URL: https://ollama.com/v1
+      ROT_MODEL_DEEPSEEK: ${{ inputs.deepseek_model }}
+      ROT_MODEL_KIMI: ${{ inputs.kimi_model }}
+      ROT_MODEL_GLM: ${{ inputs.glm_model }}
+      ROT_MODEL_MINIMAX: ${{ inputs.minimax_model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Fail closed if secret is absent
+        shell: bash
+        run: |
+          test -n "$OLLAMA_API_KEY" || { echo 'OLLAMA_API_KEY GitHub Actions secret is required'; exit 2; }
+      - name: Install exact OpenClaw package
+        run: npm install -g "openclaw@$OPENCLAW_SPEC"
+      - name: Build pinned sandbox image
+        run: docker build -t openclaw-sandbox:bookworm-slim -f qualification/Dockerfile.openclaw-sandbox .
+      - name: Run real-provider qualification
+        run: bash scripts/real_provider_qualification.sh qa/real-provider
+      - name: Publish summary
+        if: always()
+        run: test -f qa/real-provider/QUALIFICATION.json && cat qa/real-provider/QUALIFICATION.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rotclaw-real-provider-qualification
+          path: qa/real-provider/
+          if-no-files-found: warn
+          retention-days: 30
