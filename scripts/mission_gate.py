@@ -34,17 +34,35 @@ def changed_files(base):
         return [x.strip() for x in p.stdout.splitlines() if x.strip()]
     except Exception: return []
 
+def worktree_files():
+    files=set()
+    for cmd in (["git","diff","--name-only","HEAD"],["git","ls-files","--others","--exclude-standard"]):
+        try:
+            p=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if p.returncode==0:
+                files.update(x.strip() for x in p.stdout.splitlines() if x.strip())
+        except Exception:
+            pass
+    return sorted(files)
+
+def check_paths(files,m):
+    violations=[]
+    for f in files:
+        if match_any(f,m["denied_paths"]): violations.append(f+":denied")
+        elif not match_any(f,m["allowed_paths"]): violations.append(f+":outside_allowed_paths")
+    if violations: fail("path_violations:\n"+"\n".join(violations))
+
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("mission"); ap.add_argument("--check-diff",action="store_true"); args=ap.parse_args()
+    ap=argparse.ArgumentParser()
+    ap.add_argument("mission")
+    ap.add_argument("--check-diff",action="store_true")
+    ap.add_argument("--check-worktree",action="store_true")
+    args=ap.parse_args()
     path=(ROOT/args.mission).resolve() if not Path(args.mission).is_absolute() else Path(args.mission)
     if not path.is_file(): fail("mission_file_not_found")
     m=json.loads(path.read_text()); validate(m)
-    violations=[]
-    if args.check_diff:
-        for f in changed_files(m["base_branch"]):
-            if match_any(f,m["denied_paths"]): violations.append(f+":denied")
-            elif not match_any(f,m["allowed_paths"]): violations.append(f+":outside_allowed_paths")
-    if violations: fail("path_violations:\n"+"\n".join(violations))
+    if args.check_diff: check_paths(changed_files(m["base_branch"]),m)
+    if args.check_worktree: check_paths(worktree_files(),m)
     print("MISSION_PASS")
     print("mission_id="+m["mission_id"])
     print("risk_class="+m["risk_class"])
