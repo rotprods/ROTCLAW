@@ -30,7 +30,7 @@ for model in "${MODELS[@]}"; do
 done
 
 python3 - "$OUT_DIR" <<'PY'
-import json,pathlib,sys
+import json,os,pathlib,sys
 out=pathlib.Path(sys.argv[1])
 models=['deepseek-v4-flash','kimi-k2.6','glm-5.2','minimax-m3']
 results={}
@@ -49,7 +49,7 @@ checks={m:(r['ok'] and r['provider']=='rot-router' and r['model']==m and r['fina
 doc={
  'schema':'rotclaw.real-provider-qualification.v1',
  'provider':'ollama-compatible',
- 'upstream_url':'https://ollama.com/v1',
+ 'upstream_url':os.environ.get('ROT_UPSTREAM_BASE_URL',''),
  'results':results,
  'checks':checks,
  'pass_count':sum(checks.values()),
@@ -58,5 +58,23 @@ doc={
 }
 (out/'QUALIFICATION.json').write_text(json.dumps(doc,indent=2)+'\n')
 print(json.dumps(doc,indent=2))
+
+# Fail closed on evidence hygiene: redact exact secret values from every textual artifact.
+secrets=[os.environ.get('OLLAMA_API_KEY',''),os.environ.get('ROT_ROUTER_TOKEN','')]
+for p in out.rglob('*'):
+    if not p.is_file() or p.stat().st_size > 5_000_000: continue
+    try: text=p.read_text(errors='strict')
+    except Exception: continue
+    changed=text
+    for secret in secrets:
+        if secret: changed=changed.replace(secret,'[REDACTED]')
+    if changed != text: p.write_text(changed)
+for p in out.rglob('*'):
+    if not p.is_file() or p.stat().st_size > 5_000_000: continue
+    try: text=p.read_text(errors='strict')
+    except Exception: continue
+    if any(secret and secret in text for secret in secrets):
+        raise SystemExit(f'secret remained in evidence: {p}')
+
 if not all(checks.values()): sys.exit(1)
 PY
