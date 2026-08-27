@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           npm install -g openclaw@2026.8.1-beta.3
           openclaw --version
+          openclaw config validate --config "$PWD/config/openclaw.bridge.json"
 
       - name: Start ROT router with provider secret isolated
         env:
@@ -80,15 +81,18 @@ jobs:
           unset OLLAMA_API_KEY
           python3 scripts/mission_bridge.py "$ROT_BRIDGE_MISSION" --out delegation/outbox
 
-      - name: Enforce delegated diff boundary
+      - name: Enforce delegated working-tree boundary
         env:
           ROT_BRIDGE_MISSION: ${{ steps.mission.outputs.path }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/mission_gate.py "$ROT_BRIDGE_MISSION" --check-diff
+          python scripts/mission_gate.py "$ROT_BRIDGE_MISSION" --check-worktree
 
       - name: Redact evidence
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          ROT_ROUTER_TOKEN: mission-bridge-local-token
         shell: bash
         run: |
           set -euo pipefail
