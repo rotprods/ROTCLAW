@@ -14,6 +14,24 @@ jobs:
           python-version: '3.13'
       - run: python -m py_compile scripts/*.py router/*.py
       - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh scripts/gha_openclaw_qualification.sh scripts/real_provider_qualification.sh scripts/node01_bootstrap.sh
+      - name: Router runtime model mapping
+        run: |
+          ROT_MODEL_GLM=provider-glm \
+          ROT_MODEL_MINIMAX=provider-minimax \
+          ROT_MODEL_KIMI=provider-kimi \
+          ROT_MODEL_DEEPSEEK=provider-deepseek \
+          python - <<'PY'
+          from router import model_router as r
+          assert r.resolve('glm-5.2') == 'provider-glm'
+          assert r.resolve('reasoning') == 'provider-glm'
+          assert r.resolve('minimax-m3') == 'provider-minimax'
+          assert r.resolve('creative') == 'provider-minimax'
+          assert r.resolve('kimi-k2.6') == 'provider-kimi'
+          assert r.resolve('research') == 'provider-kimi'
+          assert r.resolve('deepseek-v4-flash') == 'provider-deepseek'
+          assert r.resolve('coding') == 'provider-deepseek'
+          print('ROUTER_MAPPING_PASS')
+          PY
       - run: python scripts/ancestry_check.py
       - run: python scripts/config_static_check.py
       - run: python scripts/promotion_check.py
