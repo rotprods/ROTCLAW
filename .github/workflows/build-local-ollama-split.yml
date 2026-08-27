@@ -56,13 +56,13 @@ jobs:
           exec "$ROOT/bin/ollama" serve
           EOF
           chmod +x "$ROOT/start-local.sh"
-          tar -C /tmp -czf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz rotclaw-local-ollama
-          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz > /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256
+          tar -C /tmp --zstd -cf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst rotclaw-local-ollama
+          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst > /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst.sha256
           mkdir -p /tmp/chunks
-          split -b 350M -d -a 2 /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz /tmp/chunks/part-
+          split -b 350M -d -a 2 /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst /tmp/chunks/part-
           ls -lh /tmp/chunks
           test "$(find /tmp/chunks -type f | wc -l)" -le 7
-          cp /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256 /tmp/chunks/SHA256SUMS.txt
+          cp /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst.sha256 /tmp/chunks/SHA256SUMS.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: {name: ollama-local-part-00, path: /tmp/chunks/part-00, compression-level: 0, retention-days: 7}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: {name: ollama-local-part-04, path: /tmp/chunks/part-04, compression-level: 0, retention-days: 7}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with: {name: ollama-local-part-05, path: /tmp/chunks/part-05, compression-level: 0, retention-days: 7}
+        with: {name: ollama-local-part-05, path: /tmp/chunks/part-05, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: {name: ollama-local-part-06, path: /tmp/chunks/part-06, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
