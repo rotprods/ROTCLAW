@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: python -m py_compile scripts/*.py router/*.py
-      - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh scripts/gha_openclaw_qualification.sh scripts/real_provider_qualification.sh scripts/node01_bootstrap.sh
+      - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh scripts/gha_openclaw_qualification.sh scripts/real_provider_qualification.sh scripts/node01_bootstrap.sh scripts/node01_install_service.sh
       - name: Router runtime model mapping
         run: python scripts/router_mapping_check.py
       - run: python scripts/ancestry_check.py
@@ -24,6 +24,8 @@ jobs:
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
+      - name: Node01 checkpoint contract
+        run: python scripts/node01_checkpoint.py
       - name: Live qualification contract (non-live)
         run: python scripts/live_qualification.py
       - name: Assert CI does not fake live qualification
@@ -34,5 +36,7 @@ jobs:
           assert q['mode']=='CONTRACT_ONLY'
           assert q['overall_state']=='NOT_QUALIFIED'
           assert all(v['state'] != 'PASS' for v in q['dimensions'].values())
+          c=json.load(open('qa/NODE01_CHECKPOINT.json'))
+          assert c['secret_values_recorded'] is False
           print('LIVE_CLAIM_HYGIENE_PASS')
           PY
