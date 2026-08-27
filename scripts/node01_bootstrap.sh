@@ -17,7 +17,7 @@ need npm
 need docker
 
 python3 - <<'PY'
-import subprocess,sys
+import subprocess
 v=subprocess.check_output(['node','--version'],text=True).strip().lstrip('v')
 parts=tuple(int(x) for x in v.split('.')[:3])
 if parts < (22,22,3):
@@ -51,6 +51,7 @@ fi
 
 install -m 600 config/openclaw.example.json "$CONFIG_ROOT/openclaw.json"
 mkdir -p "$STATE_ROOT/workspace"
+chmod 700 "$STATE_ROOT/workspace"
 
 cat > "$STATE_ROOT/start-router.sh" <<EOF
 #!/usr/bin/env bash
@@ -58,6 +59,8 @@ set -euo pipefail
 set -a
 source "$ENV_FILE"
 set +a
+: "\${ROT_ROUTER_TOKEN:?ROT_ROUTER_TOKEN must be set in $ENV_FILE}"
+: "\${OLLAMA_API_KEY:?OLLAMA_API_KEY must be set in $ENV_FILE}"
 cd "$PWD"
 exec python3 router/model_router.py
 EOF
@@ -74,17 +77,22 @@ openclaw --version
 openclaw config validate --json
 openclaw sandbox explain --json
 curl -fsS http://127.0.0.1:8787/healthz
+python3 "$PWD/scripts/node01_checkpoint.py"
 EOF
 chmod 700 "$STATE_ROOT/verify-node01.sh"
 
 cat <<EOF
 ROTCLAW Node 01 bootstrap complete.
-State:  $STATE_ROOT
-Config: $CONFIG_ROOT/openclaw.json
-Secrets:$ENV_FILE
+State:   $STATE_ROOT
+Config:  $CONFIG_ROOT/openclaw.json
+Secrets: $ENV_FILE
+
 Next:
   1. populate OLLAMA_API_KEY and ROT_ROUTER_TOKEN in $ENV_FILE
-  2. run $STATE_ROOT/start-router.sh
-  3. run $STATE_ROOT/verify-node01.sh
-  4. run scripts/real_provider_qualification.sh qa/node01-real
+  2. preferred persistent install: bash scripts/node01_install_service.sh
+  3. verify: $STATE_ROOT/verify-node01.sh
+  4. real inference: bash scripts/real_provider_qualification.sh qa/node01-real
+
+Manual foreground fallback:
+  $STATE_ROOT/start-router.sh
 EOF
