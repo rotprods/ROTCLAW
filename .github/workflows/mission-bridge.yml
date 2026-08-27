@@ -79,7 +79,8 @@ jobs:
         run: |
           set -euo pipefail
           unset OLLAMA_API_KEY
-          python3 scripts/mission_bridge.py "$ROT_BRIDGE_MISSION" --out delegation/outbox
+          rm -rf /tmp/rotclaw-outbox && mkdir -p /tmp/rotclaw-outbox
+          python3 scripts/mission_bridge.py "$ROT_BRIDGE_MISSION" --out /tmp/rotclaw-outbox
 
       - name: Enforce delegated working-tree boundary
         env:
@@ -96,13 +97,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/redact_bridge_evidence.py delegation/outbox /tmp/rot-router.log
+          python3 scripts/redact_bridge_evidence.py /tmp/rotclaw-outbox /tmp/rot-router.log
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rotclaw-mission-${{ github.sha }}
           path: |
-            delegation/outbox/
+            /tmp/rotclaw-outbox/
             /tmp/rot-router.log
           if-no-files-found: error
           retention-days: 7
