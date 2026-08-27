@@ -1,0 +1,41 @@
+name: openclaw-host-qualification
+on:
+  push:
+    branches: [reconstruct/v6-full-composite]
+    paths:
+      - '.github/workflows/openclaw-host-qualification.yml'
+      - 'scripts/gha_openclaw_qualification.sh'
+      - 'config/openclaw.example.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Host facts
+        run: |
+          uname -a
+          node --version
+          npm --version
+          docker --version
+      - name: Qualify upstream OpenClaw 2026.8.1
+        env:
+          OPENCLAW_VERSION: '2026.8.1'
+        run: bash scripts/gha_openclaw_qualification.sh qa/gha-host
+      - name: Publish qualification summary
+        run: cat qa/gha-host/QUALIFICATION.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rotclaw-openclaw-host-qualification
+          path: qa/gha-host/
+          if-no-files-found: error
+          retention-days: 30
