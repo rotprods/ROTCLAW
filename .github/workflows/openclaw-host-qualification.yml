@@ -6,8 +6,11 @@ on:
       - '.github/workflows/openclaw-host-qualification.yml'
       - 'scripts/gha_openclaw_qualification.sh'
       - 'scripts/mock_openai_provider.py'
+      - 'scripts/router_mapping_check.py'
+      - 'router/model_router.py'
       - 'qualification/Dockerfile.openclaw-sandbox'
       - 'config/openclaw.example.json'
+      - 'config/model-routing.json'
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,6 +32,8 @@ jobs:
           node --version
           npm --version
           docker --version
+      - name: Router mapping contract
+        run: python scripts/router_mapping_check.py
       - name: Qualify published OpenClaw 2026.8.1-beta.3
         env:
           OPENCLAW_SPEC: '2026.8.1-beta.3'
