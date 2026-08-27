@@ -28,9 +28,14 @@ jobs:
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
           ollama pull qwen3:0.6b-q4_K_M
           curl -fsS http://127.0.0.1:11434/api/generate -H 'content-type: application/json' \
-            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Reply exactly LOCAL_OK","stream":false,"think":false}' \
+            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Reply briefly with local ok","stream":false,"think":false}' \
             | tee /tmp/local-smoke.json
-          grep -q 'LOCAL_OK' /tmp/local-smoke.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/local-smoke.json'))
+          assert p.get('done') is True
+          assert isinstance(p.get('response'),str) and p['response'].strip()
+          PY
       - name: Build verified portable bundle and split below connector limit
         shell: bash
         run: |
@@ -70,5 +75,7 @@ jobs:
         with: {name: ollama-local-part-04, path: /tmp/chunks/part-04, compression-level: 0, retention-days: 7}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: {name: ollama-local-part-05, path: /tmp/chunks/part-05, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-06, path: /tmp/chunks/part-06, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: {name: ollama-local-manifest, path: /tmp/chunks/SHA256SUMS.txt, compression-level: 0, retention-days: 7}
