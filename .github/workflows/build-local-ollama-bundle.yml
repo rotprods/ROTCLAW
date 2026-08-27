@@ -1,0 +1,81 @@
+name: build-local-ollama-bundle
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-local-ollama-bundle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Install Ollama v0.32.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst \
+            https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          ollama --version
+
+      - name: Start Ollama and pull Qwen3 0.6B
+        shell: bash
+        env:
+          OLLAMA_HOST: 127.0.0.1:11434
+        run: |
+          set -euo pipefail
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          echo $! >/tmp/ollama.pid
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break
+            sleep 1
+          done
+          ollama pull qwen3:0.6b-q4_K_M
+          curl -fsS http://127.0.0.1:11434/api/generate \
+            -H 'content-type: application/json' \
+            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Reply exactly LOCAL_OK","stream":false,"think":false}' \
+            | tee /tmp/local-smoke.json
+          grep -q 'LOCAL_OK' /tmp/local-smoke.json
+
+      - name: Build portable CPU-local bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rotclaw-local-ollama/bin /tmp/rotclaw-local-ollama/lib /tmp/rotclaw-local-ollama/models
+          cp -a /usr/bin/ollama /tmp/rotclaw-local-ollama/bin/ollama
+          if [ -d /usr/lib/ollama ]; then cp -a /usr/lib/ollama/. /tmp/rotclaw-local-ollama/lib/; fi
+          cp -a "$HOME/.ollama/models/." /tmp/rotclaw-local-ollama/models/
+          cp /tmp/local-smoke.json /tmp/rotclaw-local-ollama/local-smoke.json
+          cat > /tmp/rotclaw-local-ollama/start-local.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+          export OLLAMA_MODELS="${OLLAMA_MODELS:-$ROOT/models}"
+          export LD_LIBRARY_PATH="$ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec "$ROOT/bin/ollama" serve
+          EOF
+          chmod +x /tmp/rotclaw-local-ollama/start-local.sh
+          du -sh /tmp/rotclaw-local-ollama
+          tar -C /tmp -czf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz rotclaw-local-ollama
+          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz | tee /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-ollama-qwen3-local
+          path: |
+            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz
+            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
