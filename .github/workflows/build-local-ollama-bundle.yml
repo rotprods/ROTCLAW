@@ -47,16 +47,19 @@ jobs:
             | tee /tmp/local-smoke.json
           grep -q 'LOCAL_OK' /tmp/local-smoke.json
 
-      - name: Build portable CPU-local bundle
+      - name: Build and validate portable CPU-only bundle
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/rotclaw-local-ollama/bin /tmp/rotclaw-local-ollama/lib /tmp/rotclaw-local-ollama/models
-          cp -a /usr/bin/ollama /tmp/rotclaw-local-ollama/bin/ollama
-          if [ -d /usr/lib/ollama ]; then cp -a /usr/lib/ollama/. /tmp/rotclaw-local-ollama/lib/; fi
-          cp -a "$HOME/.ollama/models/." /tmp/rotclaw-local-ollama/models/
-          cp /tmp/local-smoke.json /tmp/rotclaw-local-ollama/local-smoke.json
-          cat > /tmp/rotclaw-local-ollama/start-local.sh <<'EOF'
+          ROOT=/tmp/rotclaw-local-ollama
+          mkdir -p "$ROOT/bin" "$ROOT/lib" "$ROOT/models"
+          cp -a /usr/bin/ollama "$ROOT/bin/ollama"
+          if [ -d /usr/lib/ollama ]; then cp -a /usr/lib/ollama/. "$ROOT/lib/"; fi
+          # Keep root shared libraries and CPU backends only. GPU/accelerator directories are unnecessary in the ChatGPT CPU worker.
+          find "$ROOT/lib" -mindepth 1 -maxdepth 1 -type d ! -name 'cpu*' -print -exec rm -rf {} + || true
+          cp -a "$HOME/.ollama/models/." "$ROOT/models/"
+          cp /tmp/local-smoke.json "$ROOT/local-smoke.json"
+          cat > "$ROOT/start-local.sh" <<'EOF'
           #!/usr/bin/env bash
           set -euo pipefail
           ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -65,17 +68,35 @@ jobs:
           export LD_LIBRARY_PATH="$ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           exec "$ROOT/bin/ollama" serve
           EOF
-          chmod +x /tmp/rotclaw-local-ollama/start-local.sh
-          du -sh /tmp/rotclaw-local-ollama
-          tar -C /tmp -czf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz rotclaw-local-ollama
-          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz | tee /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256
+          chmod +x "$ROOT/start-local.sh"
+
+          # Kill the system installation and prove the reduced bundle works independently.
+          kill "$(cat /tmp/ollama.pid)" 2>/dev/null || true
+          pkill -f 'llama-server' 2>/dev/null || true
+          sleep 1
+          OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="$ROOT/models" LD_LIBRARY_PATH="$ROOT/lib" \
+            nohup "$ROOT/bin/ollama" serve >/tmp/ollama-min.log 2>&1 &
+          echo $! >/tmp/ollama-min.pid
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:11434/api/generate \
+            -H 'content-type: application/json' \
+            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Reply exactly LOCAL_MIN_OK","stream":false,"think":false}' \
+            | tee "$ROOT/minimal-smoke.json"
+          grep -q 'LOCAL_MIN_OK' "$ROOT/minimal-smoke.json"
+          du -sh "$ROOT" "$ROOT/lib" "$ROOT/models"
+          find "$ROOT/lib" -maxdepth 2 -type f -printf '%s %p\n' | sort -nr | head -30
+          tar -C /tmp -czf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_CPU_LOCAL.tar.gz rotclaw-local-ollama
+          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_CPU_LOCAL.tar.gz | tee /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_CPU_LOCAL.tar.gz.sha256
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: rotclaw-ollama-qwen3-local
+          name: rotclaw-ollama-qwen3-cpu-local
           path: |
-            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz
-            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.gz.sha256
+            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_CPU_LOCAL.tar.gz
+            /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_CPU_LOCAL.tar.gz.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
