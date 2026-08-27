@@ -7,13 +7,14 @@ ENV_FILE="$CONFIG_ROOT/node01.env"
 UNIT_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT_FILE="$UNIT_ROOT/rotclaw-router.service"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DRY_RUN="${ROTCLAW_SERVICE_DRY_RUN:-0}"
 
 command -v systemctl >/dev/null 2>&1 || { echo "systemctl is required" >&2; exit 2; }
 [[ -f "$ENV_FILE" ]] || { echo "missing $ENV_FILE; run scripts/node01_bootstrap.sh first" >&2; exit 2; }
 [[ -x "$STATE_ROOT/start-router.sh" ]] || { echo "missing $STATE_ROOT/start-router.sh; run bootstrap first" >&2; exit 2; }
 
 mkdir -p "$UNIT_ROOT"
-chmod 700 "$(dirname "$UNIT_ROOT")" "$UNIT_ROOT" 2>/dev/null || true
+chmod 700 "$UNIT_ROOT" 2>/dev/null || true
 
 cat > "$UNIT_FILE" <<EOF
 [Unit]
@@ -40,6 +41,15 @@ LockPersonality=true
 WantedBy=default.target
 EOF
 chmod 600 "$UNIT_FILE"
+
+if command -v systemd-analyze >/dev/null 2>&1; then
+  systemd-analyze verify "$UNIT_FILE"
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "NODE01_SERVICE_DRY_RUN_PASS $UNIT_FILE"
+  exit 0
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable --now rotclaw-router.service
