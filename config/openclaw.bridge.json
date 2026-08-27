@@ -1,0 +1,43 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "rot-router": {
+        "baseUrl": "http://127.0.0.1:8787/v1",
+        "apiKey": {"source":"env","provider":"default","id":"ROT_ROUTER_TOKEN"},
+        "api": "openai-completions",
+        "models": [
+          {"id":"deepseek-v4-flash","name":"DeepSeek V4 Flash","reasoning":true,"input":["text"]},
+          {"id":"kimi-k2.6","name":"Kimi K2.6","reasoning":true,"input":["text"]},
+          {"id":"glm-5.2","name":"GLM 5.2","reasoning":true,"input":["text"]},
+          {"id":"minimax-m3","name":"MiniMax M3","reasoning":true,"input":["text"]}
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": ".",
+      "model": {
+        "primary": "rot-router/deepseek-v4-flash",
+        "fallbacks": ["rot-router/kimi-k2.6","rot-router/glm-5.2","rot-router/minimax-m3"]
+      },
+      "models": {
+        "rot-router/deepseek-v4-flash": {"alias":"DeepSeek V4 Flash"},
+        "rot-router/kimi-k2.6": {"alias":"Kimi K2.6"},
+        "rot-router/glm-5.2": {"alias":"GLM 5.2"},
+        "rot-router/minimax-m3": {"alias":"MiniMax M3"}
+      },
+      "modelPolicy": {"allow":["rot-router/*"]},
+      "elevatedDefault": "off",
+      "sandbox": {"mode":"off"}
+    }
+  },
+  "tools": {
+    "profile": "coding",
+    "fs": {"workspaceOnly": true},
+    "exec": {"host":"gateway","mode":"ask","strictInlineEval":true},
+    "elevated": {"enabled": false}
+  },
+  "gateway": {"bind":"loopback"}
+}
