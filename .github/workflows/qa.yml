@@ -32,6 +32,8 @@ jobs:
       - run: python scripts/promotion_check.py
       - name: Delegated mission contract
         run: python scripts/mission_gate.py delegation/example.mission.json
+      - name: Sentinel frontier bridge contract
+        run: python scripts/frontier_bridge_check.py
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
