@@ -84,9 +84,9 @@ jobs:
           m=json.load(open(os.environ['MISSION_PATH']))
           print('Generate a very short Markdown evidence file for this bounded mission.')
           print('Goal:',m['goal'])
-          print('Return only Markdown, maximum 10 lines, no code fences and no commentary.')
+          print('Return only Markdown, maximum 10 lines, no code fences, control tags or commentary.')
           print('Line 1 must be exactly: # ROTCLAW Relay Canary')
-          print('Include these exact lines:')
+          print('Include these exact lines with nothing appended:')
           print('- delegated_by: OpenClaw local Qwen3')
           print('- authority: A1 bounded documentation edit')
           print('- merge_authority: none')
@@ -98,12 +98,21 @@ jobs:
             --model 'ollama/qwen3:0.6b-q4_K_M' \
             --timeout 75 --local-model-lean \
             > /tmp/generated.md
-          grep -q '^# ROTCLAW Relay Canary' /tmp/generated.md
-          grep -q -- '- delegated_by: OpenClaw local Qwen3' /tmp/generated.md
-          grep -q -- '- authority: A1 bounded documentation edit' /tmp/generated.md
-          grep -q -- '- merge_authority: none' /tmp/generated.md
-          grep -q -- '- result: RELAY_CANARY_OK' /tmp/generated.md
-          test "$(wc -l < /tmp/generated.md)" -le 12
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=[line.rstrip() for line in Path('/tmp/generated.md').read_text().splitlines()]
+          assert 1 <= len(lines) <= 12, lines
+          assert lines[0] == '# ROTCLAW Relay Canary', lines
+          required={
+            '- delegated_by: OpenClaw local Qwen3',
+            '- authority: A1 bounded documentation edit',
+            '- merge_authority: none',
+            '- result: RELAY_CANARY_OK',
+          }
+          assert required.issubset(set(lines)), lines
+          assert all('/no_talk' not in line and '<tool' not in line.lower() for line in lines), lines
+          Path('/tmp/generated.md').write_text('\n'.join(lines)+'\n')
+          PY
           cp /tmp/generated.md docs/relay-canary.md
 
       - name: Enforce mission boundaries and tests
