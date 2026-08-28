@@ -51,11 +51,13 @@ jobs:
 
       - name: Install OpenClaw
         shell: bash
+        env:
+          OPENCLAW_CONFIG_PATH: ${{ github.workspace }}/config/openclaw.local-ollama.json
         run: |
           set -euo pipefail
           npm install -g openclaw@2026.8.1-beta.3
           openclaw --version
-          openclaw config validate --config "$PWD/config/openclaw.local-ollama.json"
+          openclaw config validate --json
 
       - name: Execute keyless local-model canary
         env:
