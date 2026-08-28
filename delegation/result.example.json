@@ -1,0 +1,19 @@
+{
+  "schema": "rotclaw.frontier-result.v1",
+  "mission_id": "example",
+  "mission_sha256": "<canonical-sha256-of-original-mission>",
+  "handoff_sha256": "<canonical-sha256-of-redacted-handoff>",
+  "source_commit": "<github-sha>",
+  "producer": "ROTCLAW_MISSION_BRIDGE",
+  "status": "SUCCEEDED",
+  "created_at": "<iso-8601>",
+  "handoff": {
+    "schema": "rotclaw.mission-handoff.v1",
+    "mission_id": "example",
+    "returncode": 0,
+    "duration_seconds": 0,
+    "stdout": "<redacted-result>",
+    "stderr": ""
+  },
+  "envelope_sha256": "<sha256-of-envelope-without-this-field>"
+}
