@@ -21,7 +21,10 @@ def main():
         elif p.returncode==2:
             env.rename(incoming/(env.name+'.replay'))
         else:
-            (incoming/(env.name+'.error')).write_text(p.stderr+p.stdout)
+            quarantine=incoming/(env.name+'.error')
+            diagnostics=incoming/(env.name+'.error.log')
+            os.replace(env, quarantine)
+            diagnostics.write_text(p.stderr+p.stdout)
     print(json.dumps({'processed':processed,'authority':'DATA_ONLY_NO_AUTOMATIC_TOOL_EXECUTION'}))
 
 if __name__=='__main__': main()

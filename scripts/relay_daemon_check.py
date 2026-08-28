@@ -21,4 +21,16 @@ with tempfile.TemporaryDirectory() as td:
     subprocess.run(['python3',str(ROOT/'scripts/result_consumer.py'),'--once'],check=True,env=env)
     acc=json.loads((b/'sentinel/results/accepted/relay-test-001.json').read_text())
     assert acc['authority']=='DATA_ONLY_NO_AUTOMATIC_TOOL_EXECUTION'
+    bad_mid='relay-test-error'
+    bad_mission=dict(mission); bad_mission['mission_id']=bad_mid; bad_mission['work_branch']='agent/'+bad_mid
+    bad_mp=b/'sentinel/frontier-export'/(bad_mid+'.json'); bad_mp.write_text(json.dumps(bad_mission))
+    bad_env=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json'); bad_env.write_text('{}')
+    subprocess.run(['python3',str(ROOT/'scripts/result_consumer.py'),'--once'],check=True,env=env)
+    quarantine=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json.error')
+    diagnostics=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json.error.log')
+    assert not bad_env.exists()
+    assert quarantine.exists() and diagnostics.exists()
+    snapshot=(quarantine.read_bytes(),diagnostics.read_bytes())
+    subprocess.run(['python3',str(ROOT/'scripts/result_consumer.py'),'--once'],check=True,env=env)
+    assert snapshot==(quarantine.read_bytes(),diagnostics.read_bytes())
     print('RELAY_RESULT_CONSUMER_PASS')
