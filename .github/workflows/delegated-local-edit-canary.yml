@@ -66,14 +66,14 @@ jobs:
           p=json.load(open('config/openclaw.local-ollama.json'))
           m=p['models']['providers']['ollama']['models'][0]
           m['contextWindow']=4096
-          m['maxTokens']=192
+          m['maxTokens']=128
           m.setdefault('params',{})['num_ctx']=4096
           m['params']['thinking']=False
           json.dump(p,open('/tmp/openclaw-canary.json','w'),indent=2)
           PY
           OPENCLAW_CONFIG_PATH=/tmp/openclaw-canary.json openclaw config validate --json
 
-      - name: Ask OpenClaw to generate bounded file content
+      - name: Ask OpenClaw for bounded agent-authored content
         env:
           MISSION_PATH: ${{ steps.mission.outputs.path }}
         shell: bash
@@ -82,40 +82,39 @@ jobs:
           python3 - <<'PY' > /tmp/prompt.txt
           import json,os
           m=json.load(open(os.environ['MISSION_PATH']))
-          print('Generate a very short Markdown evidence file for this bounded mission.')
+          print('Write one short factual sentence describing the purpose of this bounded relay canary.')
           print('Goal:',m['goal'])
-          print('Return only Markdown, maximum 10 lines, no code fences, control tags or commentary.')
-          print('Line 1 must be exactly: # ROTCLAW Relay Canary')
-          print('Include these exact lines with nothing appended:')
-          print('- delegated_by: OpenClaw local Qwen3')
-          print('- authority: A1 bounded documentation edit')
-          print('- merge_authority: none')
-          print('- result: RELAY_CANARY_OK')
+          print('Return only that sentence. Maximum 180 characters. Do not state permissions, authority, provenance or test results.')
           PY
-          timeout 90s openclaw agent exec "$(cat /tmp/prompt.txt)" \
+          timeout 75s openclaw agent exec "$(cat /tmp/prompt.txt)" \
             --config /tmp/openclaw-canary.json \
             --cwd "$PWD" \
             --model 'ollama/qwen3:0.6b-q4_K_M' \
-            --timeout 75 --local-model-lean \
-            > /tmp/generated.md
+            --timeout 60 --local-model-lean \
+            > /tmp/model-output.txt
           python3 - <<'PY'
           from pathlib import Path
-          lines=[line.rstrip() for line in Path('/tmp/generated.md').read_text().splitlines()]
-          assert 1 <= len(lines) <= 12, lines
-          assert lines[0] == '# ROTCLAW Relay Canary', lines
-          required={
-            '- delegated_by: OpenClaw local Qwen3',
-            '- authority: A1 bounded documentation edit',
-            '- merge_authority: none',
-            '- result: RELAY_CANARY_OK',
-          }
-          assert required.issubset(set(lines)), lines
-          assert all('/no_talk' not in line and '<tool' not in line.lower() for line in lines), lines
-          Path('/tmp/generated.md').write_text('\n'.join(lines)+'\n')
+          import re
+          raw=Path('/tmp/model-output.txt').read_text(errors='replace')
+          lines=[x.strip() for x in raw.splitlines() if x.strip()]
+          assert lines, raw
+          summary=lines[0]
+          summary=re.sub(r'\s+/[A-Za-z_][A-Za-z0-9_-]*\s*$', '', summary).strip()
+          assert 10 <= len(summary) <= 180, summary
+          assert '\x00' not in summary and '<tool' not in summary.lower(), summary
+          body=(
+            '# ROTCLAW Relay Canary\n\n'
+            + summary + '\n\n'
+            + '- delegated_by: OpenClaw local Qwen3\n'
+            + '- authority: A1 bounded documentation edit\n'
+            + '- merge_authority: none\n'
+            + '- result: RELAY_CANARY_OK\n'
+          )
+          Path('docs/relay-canary.md').write_text(body)
+          Path('/tmp/model-summary.txt').write_text(summary+'\n')
           PY
-          cp /tmp/generated.md docs/relay-canary.md
 
-      - name: Enforce mission boundaries and tests
+      - name: Enforce mission boundaries and trusted attestation
         shell: bash
         run: |
           set -euo pipefail
@@ -123,6 +122,17 @@ jobs:
           changed="$({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sed '/^$/d' | sort -u)"
           test "$(printf '%s\n' "$changed" | wc -l)" -eq 1
           test "$changed" = 'docs/relay-canary.md'
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=[x.rstrip() for x in Path('docs/relay-canary.md').read_text().splitlines()]
+          assert lines[0]=='# ROTCLAW Relay Canary'
+          for required in [
+            '- delegated_by: OpenClaw local Qwen3',
+            '- authority: A1 bounded documentation edit',
+            '- merge_authority: none',
+            '- result: RELAY_CANARY_OK',
+          ]: assert required in lines, (required,lines)
+          PY
           python -m py_compile scripts/*.py router/*.py
 
       - name: Build review artifact
@@ -131,6 +141,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/delegated-edit
           cp docs/relay-canary.md /tmp/delegated-edit/relay-canary.md
+          cp /tmp/model-summary.txt /tmp/delegated-edit/model-summary.txt
           git add -N docs/relay-canary.md
           git diff --binary -- docs/relay-canary.md > /tmp/delegated-edit/relay-canary.patch
           test -s /tmp/delegated-edit/relay-canary.patch
@@ -138,13 +149,16 @@ jobs:
           import hashlib,json
           from pathlib import Path
           p=Path('/tmp/delegated-edit/relay-canary.md')
+          s=Path('/tmp/delegated-edit/model-summary.txt')
           Path('/tmp/delegated-edit/EVIDENCE.json').write_text(json.dumps({
-            'schema':'rotclaw.delegated-edit-evidence.v1',
+            'schema':'rotclaw.delegated-edit-evidence.v2',
             'mission_id':'${{ steps.mission.outputs.mission_id }}',
             'source_commit':'${{ github.sha }}',
             'changed_paths':['docs/relay-canary.md'],
             'content_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
-            'authority':'A1_NO_PUSH_NO_MERGE'
+            'model_summary_sha256':hashlib.sha256(s.read_bytes()).hexdigest(),
+            'authority':'A1_NO_PUSH_NO_MERGE',
+            'attestation_source':'TRUSTED_HARNESS_NOT_MODEL'
           },indent=2)+'\n')
           PY
 
