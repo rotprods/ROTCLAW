@@ -5,7 +5,7 @@
   "risk_class": "A2",
   "repository": "rotprods/ROTCLAW",
   "base_branch": "reconstruct/v6-full-composite",
-  "work_branch": "agent/result-consumer-quarantine",
+  "work_branch": "agent/result-consumer-quarantine-v2",
   "allowed_paths": [
     "scripts/result_consumer.py",
     "scripts/relay_daemon_check.py"
