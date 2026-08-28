@@ -1,0 +1,98 @@
+name: closed-loop-local-canary
+
+on:
+  push:
+    branches:
+      - reconstruct/v6-full-composite
+    paths:
+      - 'delegation/closed-loop-canary/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.3'
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Resolve and validate canary mission
+        id: mission
+        shell: bash
+        run: |
+          set -euo pipefail
+          mission="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^delegation/closed-loop-canary/.*\.json$' | head -n1)"
+          test -n "$mission"
+          python scripts/mission_gate.py "$mission"
+          echo "path=$mission" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Ollama
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:0.6b-q4_K_M
+
+      - name: Install OpenClaw
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g openclaw@2026.8.1-beta.3
+          openclaw --version
+          openclaw config validate --config "$PWD/config/openclaw.local-ollama.json"
+
+      - name: Execute keyless local-model canary
+        env:
+          ROT_CANARY_MISSION: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/closed-loop-out && mkdir -p /tmp/closed-loop-out
+          mission_id="$(python3 -c 'import json,os; print(json.load(open(os.environ["ROT_CANARY_MISSION"]))["mission_id"])')"
+          prompt="$(python3 -c 'import json,os; m=json.load(open(os.environ["ROT_CANARY_MISSION"])); print(m["goal"])')"
+          set +e
+          openclaw agent exec "$prompt" \
+            --config "$PWD/config/openclaw.local-ollama.json" \
+            --cwd "$PWD" \
+            --model 'ollama/qwen3:0.6b-q4_K_M' \
+            --json --timeout 300 --local-model-lean \
+            > /tmp/closed-loop-out/openclaw.json 2>/tmp/closed-loop-out/openclaw.stderr
+          rc=$?
+          set -e
+          python3 - "$mission_id" "$rc" <<'PY'
+          import json,sys
+          mid=sys.argv[1]; rc=int(sys.argv[2])
+          stdout=open('/tmp/closed-loop-out/openclaw.json').read()
+          stderr=open('/tmp/closed-loop-out/openclaw.stderr').read()
+          json.dump({'schema':'rotclaw.mission-handoff.v1','mission_id':mid,'returncode':rc,'duration_seconds':0,'stdout':stdout,'stderr':stderr},open(f'/tmp/closed-loop-out/{mid}.json','w'),indent=2)
+          PY
+          test "$rc" -eq 0
+          grep -q 'PHYSICAL_CLOSED_LOOP_OK' /tmp/closed-loop-out/openclaw.json
+          python3 scripts/frontier_result.py envelope \
+            --mission "$ROT_CANARY_MISSION" \
+            --handoff "/tmp/closed-loop-out/${mission_id}.json" \
+            --source-commit "$GITHUB_SHA" \
+            --out "/tmp/closed-loop-out/${mission_id}.frontier-result.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-closed-loop-${{ github.sha }}
+          path: /tmp/closed-loop-out/
+          if-no-files-found: error
+          retention-days: 7
