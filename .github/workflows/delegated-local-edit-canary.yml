@@ -13,7 +13,7 @@ permissions:
 jobs:
   delegated-edit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -56,14 +56,22 @@ jobs:
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
           ollama pull qwen3:0.6b-q4_K_M
 
-      - name: Install OpenClaw
+      - name: Install OpenClaw and create lean canary config
         shell: bash
-        env:
-          OPENCLAW_CONFIG_PATH: ${{ github.workspace }}/config/openclaw.local-ollama.json
         run: |
           set -euo pipefail
           npm install -g openclaw@2026.8.1-beta.3
-          openclaw config validate --json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('config/openclaw.local-ollama.json'))
+          m=p['models']['providers']['ollama']['models'][0]
+          m['contextWindow']=4096
+          m['maxTokens']=192
+          m.setdefault('params',{})['num_ctx']=4096
+          m['params']['thinking']=False
+          json.dump(p,open('/tmp/openclaw-canary.json','w'),indent=2)
+          PY
+          OPENCLAW_CONFIG_PATH=/tmp/openclaw-canary.json openclaw config validate --json
 
       - name: Ask OpenClaw to generate bounded file content
         env:
@@ -74,27 +82,28 @@ jobs:
           python3 - <<'PY' > /tmp/prompt.txt
           import json,os
           m=json.load(open(os.environ['MISSION_PATH']))
-          print('You are executing a bounded documentation-only mission.')
+          print('Generate a very short Markdown evidence file for this bounded mission.')
           print('Goal:',m['goal'])
-          print('Return only the complete Markdown file body. No fences, no commentary.')
-          print('The file MUST start with exactly: # ROTCLAW Relay Canary')
-          print('It MUST contain exactly these evidence lines somewhere:')
+          print('Return only Markdown, maximum 10 lines, no code fences and no commentary.')
+          print('Line 1 must be exactly: # ROTCLAW Relay Canary')
+          print('Include these exact lines:')
           print('- delegated_by: OpenClaw local Qwen3')
           print('- authority: A1 bounded documentation edit')
           print('- merge_authority: none')
           print('- result: RELAY_CANARY_OK')
           PY
-          openclaw agent exec "$(cat /tmp/prompt.txt)" \
-            --config "$PWD/config/openclaw.local-ollama.json" \
+          timeout 90s openclaw agent exec "$(cat /tmp/prompt.txt)" \
+            --config /tmp/openclaw-canary.json \
             --cwd "$PWD" \
             --model 'ollama/qwen3:0.6b-q4_K_M' \
-            --timeout 300 --local-model-lean \
+            --timeout 75 --local-model-lean \
             > /tmp/generated.md
           grep -q '^# ROTCLAW Relay Canary' /tmp/generated.md
           grep -q -- '- delegated_by: OpenClaw local Qwen3' /tmp/generated.md
           grep -q -- '- authority: A1 bounded documentation edit' /tmp/generated.md
           grep -q -- '- merge_authority: none' /tmp/generated.md
           grep -q -- '- result: RELAY_CANARY_OK' /tmp/generated.md
+          test "$(wc -l < /tmp/generated.md)" -le 12
           cp /tmp/generated.md docs/relay-canary.md
 
       - name: Enforce mission boundaries and tests
