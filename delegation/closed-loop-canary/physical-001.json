@@ -1,0 +1,15 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "physical-closed-loop-001",
+  "goal": "Reply exactly PHYSICAL_CLOSED_LOOP_OK and do not modify files or call tools.",
+  "risk_class": "A0",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "main",
+  "work_branch": "agent/physical-closed-loop-001",
+  "allowed_paths": ["docs/**"],
+  "denied_paths": [".github/**", "config/**", "router/**", "scripts/**", ".secrets/**", "delegation/**"],
+  "allowed_actions": ["read", "test"],
+  "acceptance": ["OpenClaw returns PHYSICAL_CLOSED_LOOP_OK", "frontier-result.v1 artifact is emitted"],
+  "requires_live": false,
+  "expires_at_utc": null
+}
