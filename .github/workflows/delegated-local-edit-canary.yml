@@ -111,8 +111,9 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/mission_gate.py "${{ steps.mission.outputs.path }}" --check-worktree
-          test "$(git diff --name-only HEAD | wc -l)" -eq 1
-          test "$(git diff --name-only HEAD)" = 'docs/relay-canary.md'
+          changed="$({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sed '/^$/d' | sort -u)"
+          test "$(printf '%s\n' "$changed" | wc -l)" -eq 1
+          test "$changed" = 'docs/relay-canary.md'
           python -m py_compile scripts/*.py router/*.py
 
       - name: Build review artifact
@@ -121,7 +122,9 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/delegated-edit
           cp docs/relay-canary.md /tmp/delegated-edit/relay-canary.md
+          git add -N docs/relay-canary.md
           git diff --binary -- docs/relay-canary.md > /tmp/delegated-edit/relay-canary.patch
+          test -s /tmp/delegated-edit/relay-canary.patch
           python3 - <<'PY'
           import hashlib,json
           from pathlib import Path
