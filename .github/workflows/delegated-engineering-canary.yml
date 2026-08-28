@@ -78,7 +78,6 @@ jobs:
             'action_write':'WRITE_PROCESS_DIAGNOSTICS'
           }
           assert obj==expected, obj
-          # Trusted deterministic compiler: validated DSL only, no model-authored syntax.
           block="\n".join([
             '        else:',
             "            quarantine=incoming/(env.name+'.error')",
@@ -137,22 +136,33 @@ jobs:
           import json
           from pathlib import Path
           patch=Path('/tmp/candidate.patch').read_text()
-          prompt="""You are an independent code REVIEWER, not the builder. Deterministic regression tests already passed. Inspect the patch for a concrete correctness or safety defect. Contract: on generic ingest failure the original envelope leaves active incoming processing atomically and is preserved in quarantine; diagnostics are separate; second run cannot retry it; success and replay branches remain unchanged. Return JSON only with keys verdict and reason. verdict must be PASS or FAIL.\nPATCH:\n"""+patch
+          prompt="""You are an independent code REVIEWER, not the builder. Deterministic regression tests already passed. Inspect the patch for a concrete correctness or safety defect. Contract: generic ingest failure atomically moves the original envelope out of active incoming processing into quarantine; diagnostics are separate; a second run cannot retry it; success and replay branches remain unchanged. Choose PASS only if no concrete defect exists. For defect_code choose one of NONE, DATA_LOSS, RETRY_LOOP, PATH_ERROR, SUCCESS_REGRESSION, REPLAY_REGRESSION, OTHER. Return only the structured object requested by the schema.\nPATCH:\n"""+patch
+          schema={
+            'type':'object','additionalProperties':False,
+            'properties':{
+              'verdict':{'type':'string','enum':['PASS','FAIL']},
+              'defect_code':{'type':'string','enum':['NONE','DATA_LOSS','RETRY_LOOP','PATH_ERROR','SUCCESS_REGRESSION','REPLAY_REGRESSION','OTHER']},
+              'finding':{'type':'string','maxLength':160}
+            },
+            'required':['verdict','defect_code','finding']
+          }
           print(json.dumps({
-            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
-            'options':{'temperature':0,'num_ctx':3072,'num_predict':96},'think':False
+            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':schema,
+            'options':{'temperature':0,'num_ctx':3072,'num_predict':160},'think':False
           }))
           PY
           curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/reviewer-request.json http://127.0.0.1:11434/api/generate > /tmp/reviewer.api.json
           python3 - <<'PY'
           import json
           api=json.load(open('/tmp/reviewer.api.json')); obj=json.loads(api['response'])
-          assert set(obj)=={'verdict','reason'}, obj
-          verdict=str(obj['verdict']).strip().upper()
-          assert verdict=='PASS', obj
-          assert isinstance(obj['reason'],str) and 1 <= len(obj['reason']) <= 500, obj
-          obj['verdict']=verdict
+          assert set(obj)=={'verdict','defect_code','finding'}, obj
+          assert obj['verdict'] in {'PASS','FAIL'}, obj
+          assert obj['defect_code'] in {'NONE','DATA_LOSS','RETRY_LOOP','PATH_ERROR','SUCCESS_REGRESSION','REPLAY_REGRESSION','OTHER'}, obj
+          assert isinstance(obj['finding'],str) and len(obj['finding'])<=160, obj
+          if obj['verdict']=='PASS': assert obj['defect_code']=='NONE', obj
+          if obj['verdict']=='FAIL': assert obj['defect_code']!='NONE', obj
           open('/tmp/reviewer.contract.json','w').write(json.dumps(obj,sort_keys=True,indent=2)+'\n')
+          assert obj['verdict']=='PASS', obj
           PY
 
       - name: Build engineering evidence artifact
@@ -172,7 +182,7 @@ jobs:
           from pathlib import Path
           def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
           Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
-            'schema':'rotclaw.delegated-engineering-evidence.v6',
+            'schema':'rotclaw.delegated-engineering-evidence.v7',
             'mission_id':'${{ steps.mission.outputs.mission_id }}',
             'source_commit':'${{ github.sha }}',
             'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
@@ -184,7 +194,7 @@ jobs:
             'builder':'isolated Ollama Qwen3 1.7B Patch DSL agent',
             'compiler':'TRUSTED_DETERMINISTIC_PATCH_COMPILER',
             'test_oracle':'TRUSTED_CONTROL_PLANE',
-            'reviewer':'independent isolated Ollama Qwen3 1.7B inference',
+            'reviewer':'independent isolated Ollama Qwen3 1.7B structured reviewer',
             'deterministic_qa':'PASS',
             'authority':'A2_NO_PUSH_NO_MERGE',
             'promotion_authority':'CONTROL_PLANE_ONLY'
