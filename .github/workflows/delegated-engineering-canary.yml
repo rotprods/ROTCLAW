@@ -1,0 +1,201 @@
+name: delegated-engineering-canary
+
+on:
+  push:
+    branches:
+      - reconstruct/v6-full-composite
+    paths:
+      - 'delegation/engineering-canary/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  builder-reviewer-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.3'
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Resolve bounded A2 mission
+        id: mission
+        shell: bash
+        run: |
+          set -euo pipefail
+          mission="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^delegation/engineering-canary/.*\.json$' | head -n1)"
+          test -n "$mission"
+          python scripts/mission_gate.py "$mission"
+          python3 - "$mission" <<'PY' >> "$GITHUB_OUTPUT"
+          import json,sys
+          m=json.load(open(sys.argv[1]))
+          expected=['scripts/relay_daemon_check.py','scripts/result_consumer.py']
+          assert sorted(m['allowed_paths']) == expected
+          assert m['risk_class'] == 'A2'
+          assert set(m['allowed_actions']) <= {'read','edit','test'}
+          print('path='+sys.argv[1])
+          print('mission_id='+m['mission_id'])
+          PY
+
+      - name: Install pinned Ollama and coding model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:1.7b-q4_K_M
+
+      - name: Install OpenClaw and isolated local config
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g openclaw@2026.8.1-beta.3
+          python3 - <<'PY'
+          import json
+          p=json.load(open('config/openclaw.local-ollama.json'))
+          m=p['models']['providers']['ollama']['models'][0]
+          m['id']='qwen3:1.7b-q4_K_M'
+          m['name']='Qwen3 1.7B Q4_K_M'
+          m['contextWindow']=12288
+          m['maxTokens']=1800
+          m.setdefault('params',{})['num_ctx']=12288
+          m['params']['thinking']=False
+          json.dump(p,open('/tmp/openclaw-engineering.json','w'),indent=2)
+          PY
+          OPENCLAW_CONFIG_PATH=/tmp/openclaw-engineering.json openclaw config validate --json
+
+      - name: Builder agent generates bounded code patch
+        env:
+          MISSION_PATH: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/builder-prompt.txt
+          import json,os
+          from pathlib import Path
+          m=json.load(open(os.environ['MISSION_PATH']))
+          print('You are the BUILDER in a bounded A2 engineering mission. Produce a minimal unified git diff only. No prose, no code fences.')
+          print('Mission goal:',m['goal'])
+          print('Acceptance criteria:')
+          for x in m['acceptance']: print('-',x)
+          print('Hard constraints: modify ONLY scripts/result_consumer.py and scripts/relay_daemon_check.py; no dependencies; stdlib only; preserve existing success and replay behavior; no Git operations.')
+          print('Required behavior: when frontier_result ingest returns any generic failure other than replay rc=2, move the original envelope out of active incoming processing to a deterministic .error quarantine path and persist stderr/stdout diagnostics separately. A later consumer run must not retry that failed envelope. Add a regression assertion to relay_daemon_check.py proving quarantine-once behavior.')
+          for path in ['scripts/result_consumer.py','scripts/relay_daemon_check.py']:
+              print('\n===== '+path+' =====')
+              print(Path(path).read_text())
+          PY
+          timeout 180s openclaw agent exec "$(cat /tmp/builder-prompt.txt)" \
+            --config /tmp/openclaw-engineering.json \
+            --cwd "$PWD" \
+            --model 'ollama/qwen3:1.7b-q4_K_M' \
+            --timeout 165 --local-model-lean \
+            > /tmp/builder.raw
+          python3 - <<'PY'
+          from pathlib import Path
+          raw=Path('/tmp/builder.raw').read_text().strip()
+          if raw.startswith('```'):
+              lines=raw.splitlines()
+              if lines and lines[0].startswith('```'): lines=lines[1:]
+              if lines and lines[-1].strip()=='```': lines=lines[:-1]
+              raw='\n'.join(lines).strip()
+          assert raw.startswith('diff --git '), raw[:300]
+          assert '.github/' not in raw
+          assert 'secrets' not in raw.lower()
+          Path('/tmp/builder.patch').write_text(raw+'\n')
+          PY
+          git apply --check /tmp/builder.patch
+          git apply /tmp/builder.patch
+
+      - name: Trusted boundary and regression QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/mission_gate.py "${{ steps.mission.outputs.path }}" --check-worktree
+          changed="$({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sed '/^$/d' | sort -u)"
+          expected="$(printf '%s\n' scripts/relay_daemon_check.py scripts/result_consumer.py | sort)"
+          test "$changed" = "$expected"
+          python -m py_compile scripts/result_consumer.py scripts/relay_daemon_check.py
+          python scripts/relay_daemon_check.py
+
+      - name: Independent reviewer agent audits patch
+        env:
+          MISSION_PATH: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff -- scripts/result_consumer.py scripts/relay_daemon_check.py > /tmp/candidate.patch
+          python3 - <<'PY' > /tmp/reviewer-prompt.txt
+          import json,os
+          from pathlib import Path
+          m=json.load(open(os.environ['MISSION_PATH']))
+          print('You are an INDEPENDENT REVIEWER. You did not build this patch. Review it adversarially for correctness, scope, replay semantics, data loss, path collisions, exception handling, and whether the regression test actually proves the requested behavior.')
+          print('Mission:',m['goal'])
+          print('Acceptance:',json.dumps(m['acceptance']))
+          print('Return exactly one first line: REVIEW_PASS or REVIEW_FAIL. After that you may give at most 8 short lines of rationale. Do not edit files or invoke tools.')
+          print('\nPATCH:\n'+Path('/tmp/candidate.patch').read_text())
+          PY
+          timeout 180s openclaw agent exec "$(cat /tmp/reviewer-prompt.txt)" \
+            --config /tmp/openclaw-engineering.json \
+            --cwd "$PWD" \
+            --model 'ollama/qwen3:1.7b-q4_K_M' \
+            --timeout 165 --local-model-lean \
+            > /tmp/reviewer.raw
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=Path('/tmp/reviewer.raw').read_text().splitlines()
+          assert lines, 'empty reviewer output'
+          assert lines[0].strip() == 'REVIEW_PASS', '\n'.join(lines[:10])
+          assert len(lines) <= 9, lines
+          PY
+
+      - name: Build engineering evidence artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/engineering-evidence/files
+          cp scripts/result_consumer.py /tmp/engineering-evidence/files/result_consumer.py
+          cp scripts/relay_daemon_check.py /tmp/engineering-evidence/files/relay_daemon_check.py
+          cp /tmp/candidate.patch /tmp/engineering-evidence/candidate.patch
+          cp /tmp/builder.raw /tmp/engineering-evidence/builder.raw
+          cp /tmp/reviewer.raw /tmp/engineering-evidence/reviewer.raw
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
+            'schema':'rotclaw.delegated-engineering-evidence.v1',
+            'mission_id':'${{ steps.mission.outputs.mission_id }}',
+            'source_commit':'${{ github.sha }}',
+            'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
+            'patch_sha256':h('/tmp/candidate.patch'),
+            'result_consumer_sha256':h('scripts/result_consumer.py'),
+            'relay_daemon_check_sha256':h('scripts/relay_daemon_check.py'),
+            'builder_raw_sha256':h('/tmp/builder.raw'),
+            'reviewer_raw_sha256':h('/tmp/reviewer.raw'),
+            'builder':'OpenClaw local Qwen3 1.7B',
+            'reviewer':'independent OpenClaw local Qwen3 1.7B session',
+            'deterministic_qa':'PASS',
+            'authority':'A2_NO_PUSH_NO_MERGE',
+            'promotion_authority':'CONTROL_PLANE_ONLY'
+          },indent=2)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-delegated-engineering-${{ github.sha }}
+          path: /tmp/engineering-evidence/
+          if-no-files-found: error
+          retention-days: 7
