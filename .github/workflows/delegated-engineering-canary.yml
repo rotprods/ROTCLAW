@@ -54,31 +54,31 @@ jobs:
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
           ollama pull qwen3:1.7b-q4_K_M
 
-      - name: Builder micro-agent emits bounded patch contract
+      - name: Builder micro-agent emits bounded Patch DSL
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY' >/tmp/builder-request.json
           import json
-          prompt="""You are a bounded Python BUILDER. Return JSON only with exactly these keys: quarantine, diagnostics, move, write. Solve this bug: a failed envelope remains in incoming and gets retried forever. The current variables are incoming, env, p. Required semantics: quarantine path is incoming/(env.name+'.error'); diagnostics path is incoming/(env.name+'.error.log'); atomically move env to quarantine; write p.stderr+p.stdout to diagnostics. Do not invent other operations."""
+          prompt="""You are a bounded engineering BUILDER. Choose the safe patch operations for this bug: a failed envelope remains in incoming and gets retried forever. Return JSON only with exactly four keys. quarantine must be the Python path expression for incoming + env.name + '.error'. diagnostics must be the Python path expression for incoming + env.name + '.error.log'. action_move must be exactly MOVE_ENV_TO_QUARANTINE. action_write must be exactly WRITE_PROCESS_DIAGNOSTICS. No prose."""
           print(json.dumps({
             'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
-            'options':{'temperature':0,'num_ctx':2048,'num_predict':128},'think':False
+            'options':{'temperature':0,'num_ctx':2048,'num_predict':96},'think':False
           }))
           PY
           curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/builder-request.json http://127.0.0.1:11434/api/generate > /tmp/builder.api.json
           python3 - <<'PY'
           import json
           from pathlib import Path
-          api=json.load(open('/tmp/builder.api.json'))
-          obj=json.loads(api['response'])
+          api=json.load(open('/tmp/builder.api.json')); obj=json.loads(api['response'])
           expected={
             'quarantine':"incoming/(env.name+'.error')",
             'diagnostics':"incoming/(env.name+'.error.log')",
-            'move':'os.replace(env, quarantine)',
-            'write':'diagnostics.write_text(p.stderr+p.stdout)'
+            'action_move':'MOVE_ENV_TO_QUARANTINE',
+            'action_write':'WRITE_PROCESS_DIAGNOSTICS'
           }
           assert obj==expected, obj
+          # Trusted compiler: only this validated DSL can become Python.
           block="\n".join([
             '        else:',
             "            quarantine=incoming/(env.name+'.error')",
@@ -89,7 +89,7 @@ jobs:
           old="        else:\n            (incoming/(env.name+'.error')).write_text(p.stderr+p.stdout)"
           p=Path('scripts/result_consumer.py'); src=p.read_text(); assert src.count(old)==1
           p.write_text(src.replace(old,block))
-          Path('/tmp/builder.contract.json').write_text(json.dumps(obj,indent=2)+'\n')
+          Path('/tmp/builder.contract.json').write_text(json.dumps(obj,sort_keys=True,indent=2)+'\n')
           PY
 
       - name: Trusted test oracle adds regression scenario
@@ -137,10 +137,10 @@ jobs:
           import json
           from pathlib import Path
           patch=Path('/tmp/candidate.patch').read_text()
-          prompt="""You are an independent REVIEWER. The deterministic regression test has already passed. Review the patch below for a concrete correctness or safety defect only. Contract: generic ingest failure leaves active incoming processing atomically, original envelope is preserved as quarantine, diagnostics are separate, second run cannot retry it, success and replay branches stay unchanged. Return JSON only: {\"verdict\":\"PASS\"|\"FAIL\",\"reason\":\"short\"}.\nPATCH:\n"""+patch
+          prompt="""You are an independent code REVIEWER, not the builder. Deterministic regression tests already passed. Inspect the patch for a concrete correctness or safety defect. Contract: on generic ingest failure the original envelope leaves active incoming processing atomically and is preserved in quarantine; diagnostics are separate; second run cannot retry it; success and replay branches remain unchanged. Return JSON only with keys verdict and reason. verdict must be PASS or FAIL.\nPATCH:\n"""+patch
           print(json.dumps({
             'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
-            'options':{'temperature':0,'num_ctx':3072,'num_predict':128},'think':False
+            'options':{'temperature':0,'num_ctx':3072,'num_predict':96},'think':False
           }))
           PY
           curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/reviewer-request.json http://127.0.0.1:11434/api/generate > /tmp/reviewer.api.json
@@ -148,9 +148,11 @@ jobs:
           import json
           api=json.load(open('/tmp/reviewer.api.json')); obj=json.loads(api['response'])
           assert set(obj)=={'verdict','reason'}, obj
-          assert obj['verdict']=='PASS', obj
-          assert isinstance(obj['reason'],str) and len(obj['reason'])<=500, obj
-          open('/tmp/reviewer.contract.json','w').write(json.dumps(obj,indent=2)+'\n')
+          verdict=str(obj['verdict']).strip().upper()
+          assert verdict=='PASS', obj
+          assert isinstance(obj['reason'],str) and 1 <= len(obj['reason']) <= 500, obj
+          obj['verdict']=verdict
+          open('/tmp/reviewer.contract.json','w').write(json.dumps(obj,sort_keys=True,indent=2)+'\n')
           PY
 
       - name: Build engineering evidence artifact
@@ -170,7 +172,7 @@ jobs:
           from pathlib import Path
           def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
           Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
-            'schema':'rotclaw.delegated-engineering-evidence.v4',
+            'schema':'rotclaw.delegated-engineering-evidence.v5',
             'mission_id':'${{ steps.mission.outputs.mission_id }}',
             'source_commit':'${{ github.sha }}',
             'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
@@ -179,13 +181,14 @@ jobs:
             'relay_daemon_check_sha256':h('scripts/relay_daemon_check.py'),
             'builder_contract_sha256':h('/tmp/builder.contract.json'),
             'reviewer_contract_sha256':h('/tmp/reviewer.contract.json'),
-            'builder':'isolated Ollama Qwen3 1.7B micro-agent',
+            'builder':'isolated Ollama Qwen3 1.7B Patch DSL agent',
+            'compiler':'TRUSTED_DETERMINISTIC_PATCH_COMPILER',
             'test_oracle':'TRUSTED_CONTROL_PLANE',
             'reviewer':'independent isolated Ollama Qwen3 1.7B inference',
             'deterministic_qa':'PASS',
             'authority':'A2_NO_PUSH_NO_MERGE',
             'promotion_authority':'CONTROL_PLANE_ONLY'
-          },indent=2)+'\n')
+          },sort_keys=True,indent=2)+'\n')
           PY
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
