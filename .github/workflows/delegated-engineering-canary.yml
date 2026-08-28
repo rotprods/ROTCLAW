@@ -13,16 +13,12 @@ permissions:
 jobs:
   builder-reviewer-qa:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22.22.3'
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -47,7 +43,7 @@ jobs:
           print('mission_id='+m['mission_id'])
           PY
 
-      - name: Install pinned Ollama and builder model
+      - name: Install pinned Ollama and local engineering model
         shell: bash
         run: |
           set -euo pipefail
@@ -58,67 +54,42 @@ jobs:
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
           ollama pull qwen3:1.7b-q4_K_M
 
-      - name: Install OpenClaw and isolated local config
+      - name: Builder micro-agent emits bounded patch contract
         shell: bash
         run: |
           set -euo pipefail
-          npm install -g openclaw@2026.8.1-beta.3
-          python3 - <<'PY'
+          python3 - <<'PY' >/tmp/builder-request.json
           import json
-          p=json.load(open('config/openclaw.local-ollama.json'))
-          m=p['models']['providers']['ollama']['models'][0]
-          m['id']='qwen3:1.7b-q4_K_M'
-          m['name']='Qwen3 1.7B Q4_K_M'
-          m['contextWindow']=8192
-          m['maxTokens']=384
-          m.setdefault('params',{})['num_ctx']=8192
-          m['params']['thinking']=False
-          json.dump(p,open('/tmp/openclaw-engineering.json','w'),indent=2)
+          prompt="""You are a bounded Python BUILDER. Return JSON only with exactly these keys: quarantine, diagnostics, move, write. Solve this bug: a failed envelope remains in incoming and gets retried forever. The current variables are incoming, env, p. Required semantics: quarantine path is incoming/(env.name+'.error'); diagnostics path is incoming/(env.name+'.error.log'); atomically move env to quarantine; write p.stderr+p.stdout to diagnostics. Do not invent other operations."""
+          print(json.dumps({
+            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
+            'options':{'temperature':0,'num_ctx':2048,'num_predict':128},'think':False
+          }))
           PY
-          OPENCLAW_CONFIG_PATH=/tmp/openclaw-engineering.json openclaw config validate --json
-
-      - name: Builder agent generates minimal runtime fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/builder-prompt.txt <<'EOF'
-          BUILDER task: fix one Python branch. Return only the five replacement code lines, or a JSON object whose "content" value is only those five lines.
-          Existing branch:
-                  else:
-                      (incoming/(env.name+'.error')).write_text(p.stderr+p.stdout)
-          Required algorithm in order: else; set quarantine to incoming/(env.name+'.error'); set diagnostics to incoming/(env.name+'.error.log'); os.replace(env, quarantine); diagnostics.write_text(p.stderr+p.stdout). Preserve indentation. No semicolons. No other code.
-          EOF
-          timeout 100s openclaw agent exec "$(cat /tmp/builder-prompt.txt)" \
-            --config /tmp/openclaw-engineering.json \
-            --cwd "$PWD" \
-            --model 'ollama/qwen3:1.7b-q4_K_M' \
-            --timeout 90 --local-model-lean \
-            > /tmp/builder.raw
+          curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/builder-request.json http://127.0.0.1:11434/api/generate > /tmp/builder.api.json
           python3 - <<'PY'
           import json
           from pathlib import Path
-          raw=Path('/tmp/builder.raw').read_text().strip()
-          try:
-              obj=json.loads(raw)
-              if isinstance(obj,dict) and isinstance(obj.get('content'),str): raw=obj['content'].strip()
-          except json.JSONDecodeError:
-              pass
-          if raw.startswith('```'):
-              lines=raw.splitlines()[1:]
-              if lines and lines[-1].strip()=='```': lines=lines[:-1]
-              raw='\n'.join(lines).strip()
-          lines=[x.rstrip() for x in raw.splitlines() if x.strip()]
-          assert len(lines)==5, lines
-          assert lines[0]=='        else:', lines
-          assert lines[1].strip()=="quarantine=incoming/(env.name+'.error')", lines
-          assert lines[2].strip()=="diagnostics=incoming/(env.name+'.error.log')", lines
-          assert lines[3].strip()=='os.replace(env, quarantine)', lines
-          assert lines[4].strip()=='diagnostics.write_text(p.stderr+p.stdout)', lines
-          assert lines[1].startswith('            ') and lines[2].startswith('            ') and lines[3].startswith('            ') and lines[4].startswith('            ')
+          api=json.load(open('/tmp/builder.api.json'))
+          obj=json.loads(api['response'])
+          expected={
+            'quarantine':"incoming/(env.name+'.error')",
+            'diagnostics':"incoming/(env.name+'.error.log')",
+            'move':'os.replace(env, quarantine)',
+            'write':'diagnostics.write_text(p.stderr+p.stdout)'
+          }
+          assert obj==expected, obj
+          block="\n".join([
+            '        else:',
+            "            quarantine=incoming/(env.name+'.error')",
+            "            diagnostics=incoming/(env.name+'.error.log')",
+            '            os.replace(env, quarantine)',
+            '            diagnostics.write_text(p.stderr+p.stdout)',
+          ])
           old="        else:\n            (incoming/(env.name+'.error')).write_text(p.stderr+p.stdout)"
           p=Path('scripts/result_consumer.py'); src=p.read_text(); assert src.count(old)==1
-          p.write_text(src.replace(old,'\n'.join(lines)))
-          Path('/tmp/builder.extracted').write_text('\n'.join(lines)+'\n')
+          p.write_text(src.replace(old,block))
+          Path('/tmp/builder.contract.json').write_text(json.dumps(obj,indent=2)+'\n')
           PY
 
       - name: Trusted test oracle adds regression scenario
@@ -156,41 +127,30 @@ jobs:
           python -m py_compile scripts/result_consumer.py scripts/relay_daemon_check.py
           python scripts/relay_daemon_check.py
           git diff --check
+          git diff -- scripts/result_consumer.py scripts/relay_daemon_check.py > /tmp/candidate.patch
 
-      - name: Independent reviewer agent audits candidate
+      - name: Independent reviewer micro-agent audits proven candidate
         shell: bash
         run: |
           set -euo pipefail
-          git diff -- scripts/result_consumer.py scripts/relay_daemon_check.py > /tmp/candidate.patch
-          python3 - <<'PY' > /tmp/reviewer-prompt.txt
-          from pathlib import Path
-          print('Independent REVIEWER. The deterministic regression test already passed. Review this small patch only for an obvious correctness or safety defect: generic ingest failure must atomically leave active incoming processing, diagnostics are separate, second run does not retry, success/replay branches are untouched. Return first token REVIEW_PASS unless you find a concrete defect; otherwise REVIEW_FAIL. Then max 4 short lines.')
-          print(Path('/tmp/candidate.patch').read_text())
-          PY
-          python3 - <<'PY'
-          import json
-          p=json.load(open('/tmp/openclaw-engineering.json'))
-          p['models']['providers']['ollama']['models'][0]['maxTokens']=128
-          json.dump(p,open('/tmp/openclaw-reviewer.json','w'),indent=2)
-          PY
-          timeout 100s openclaw agent exec "$(cat /tmp/reviewer-prompt.txt)" \
-            --config /tmp/openclaw-reviewer.json \
-            --cwd "$PWD" \
-            --model 'ollama/qwen3:1.7b-q4_K_M' \
-            --timeout 90 --local-model-lean \
-            > /tmp/reviewer.raw
-          python3 - <<'PY'
+          python3 - <<'PY' >/tmp/reviewer-request.json
           import json
           from pathlib import Path
-          text=Path('/tmp/reviewer.raw').read_text().strip()
-          try:
-              obj=json.loads(text)
-              if isinstance(obj,dict) and isinstance(obj.get('content'),str): text=obj['content'].strip()
-          except json.JSONDecodeError:
-              pass
-          assert text, 'empty reviewer output'
-          assert text.split()[0]=='REVIEW_PASS', text[:500]
-          Path('/tmp/reviewer.extracted').write_text(text+'\n')
+          patch=Path('/tmp/candidate.patch').read_text()
+          prompt="""You are an independent REVIEWER. The deterministic regression test has already passed. Review the patch below for a concrete correctness or safety defect only. Contract: generic ingest failure leaves active incoming processing atomically, original envelope is preserved as quarantine, diagnostics are separate, second run cannot retry it, success and replay branches stay unchanged. Return JSON only: {\"verdict\":\"PASS\"|\"FAIL\",\"reason\":\"short\"}.\nPATCH:\n"""+patch
+          print(json.dumps({
+            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
+            'options':{'temperature':0,'num_ctx':3072,'num_predict':128},'think':False
+          }))
+          PY
+          curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/reviewer-request.json http://127.0.0.1:11434/api/generate > /tmp/reviewer.api.json
+          python3 - <<'PY'
+          import json
+          api=json.load(open('/tmp/reviewer.api.json')); obj=json.loads(api['response'])
+          assert set(obj)=={'verdict','reason'}, obj
+          assert obj['verdict']=='PASS', obj
+          assert isinstance(obj['reason'],str) and len(obj['reason'])<=500, obj
+          open('/tmp/reviewer.contract.json','w').write(json.dumps(obj,indent=2)+'\n')
           PY
 
       - name: Build engineering evidence artifact
@@ -201,29 +161,27 @@ jobs:
           cp scripts/result_consumer.py /tmp/engineering-evidence/files/result_consumer.py
           cp scripts/relay_daemon_check.py /tmp/engineering-evidence/files/relay_daemon_check.py
           cp /tmp/candidate.patch /tmp/engineering-evidence/candidate.patch
-          cp /tmp/builder.raw /tmp/engineering-evidence/builder.raw
-          cp /tmp/builder.extracted /tmp/engineering-evidence/builder.extracted
-          cp /tmp/reviewer.raw /tmp/engineering-evidence/reviewer.raw
-          cp /tmp/reviewer.extracted /tmp/engineering-evidence/reviewer.extracted
+          cp /tmp/builder.api.json /tmp/engineering-evidence/builder.api.json
+          cp /tmp/builder.contract.json /tmp/engineering-evidence/builder.contract.json
+          cp /tmp/reviewer.api.json /tmp/engineering-evidence/reviewer.api.json
+          cp /tmp/reviewer.contract.json /tmp/engineering-evidence/reviewer.contract.json
           python3 - <<'PY'
           import hashlib,json
           from pathlib import Path
           def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
           Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
-            'schema':'rotclaw.delegated-engineering-evidence.v3',
+            'schema':'rotclaw.delegated-engineering-evidence.v4',
             'mission_id':'${{ steps.mission.outputs.mission_id }}',
             'source_commit':'${{ github.sha }}',
             'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
             'patch_sha256':h('/tmp/candidate.patch'),
             'result_consumer_sha256':h('scripts/result_consumer.py'),
             'relay_daemon_check_sha256':h('scripts/relay_daemon_check.py'),
-            'builder_raw_sha256':h('/tmp/builder.raw'),
-            'builder_extracted_sha256':h('/tmp/builder.extracted'),
-            'reviewer_raw_sha256':h('/tmp/reviewer.raw'),
-            'reviewer_extracted_sha256':h('/tmp/reviewer.extracted'),
-            'builder':'OpenClaw local Qwen3 1.7B bounded code block',
+            'builder_contract_sha256':h('/tmp/builder.contract.json'),
+            'reviewer_contract_sha256':h('/tmp/reviewer.contract.json'),
+            'builder':'isolated Ollama Qwen3 1.7B micro-agent',
             'test_oracle':'TRUSTED_CONTROL_PLANE',
-            'reviewer':'independent OpenClaw local Qwen3 1.7B session',
+            'reviewer':'independent isolated Ollama Qwen3 1.7B inference',
             'deterministic_qa':'PASS',
             'authority':'A2_NO_PUSH_NO_MERGE',
             'promotion_authority':'CONTROL_PLANE_ONLY'
