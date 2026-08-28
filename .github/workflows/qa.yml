@@ -36,6 +36,8 @@ jobs:
         run: python scripts/frontier_bridge_check.py
       - name: Frontier result integrity and replay contract
         run: python scripts/frontier_result_check.py
+      - name: Relay daemon and result consumer contract
+        run: python scripts/relay_daemon_check.py
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
