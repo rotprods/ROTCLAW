@@ -1,0 +1,34 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "relay-canary-001",
+  "goal": "Create a concise evidence document proving that an OpenClaw local Qwen3 agent can produce a bounded documentation edit for the Relay/Result Consumer architecture. Keep it short, factual, and include the exact required evidence lines supplied by the execution harness.",
+  "risk_class": "A1",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "reconstruct/v6-full-composite",
+  "work_branch": "agent/relay-canary",
+  "allowed_paths": [
+    "docs/relay-canary.md"
+  ],
+  "denied_paths": [
+    ".github/**",
+    "config/**",
+    "router/**",
+    "scripts/**",
+    ".secrets/**",
+    "delegation/**"
+  ],
+  "allowed_actions": [
+    "read",
+    "edit",
+    "test"
+  ],
+  "acceptance": [
+    "Only docs/relay-canary.md is modified by the delegated agent",
+    "The required evidence lines are present",
+    "Mission boundary validation passes",
+    "Python compilation checks pass",
+    "A review artifact with file, patch and evidence JSON is produced"
+  ],
+  "requires_live": false,
+  "expires_at_utc": null
+}
