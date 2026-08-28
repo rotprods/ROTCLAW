@@ -60,10 +60,10 @@ jobs:
           set -euo pipefail
           python3 - <<'PY' >/tmp/builder-request.json
           import json
-          prompt="""You are a bounded engineering BUILDER. Choose the safe patch operations for this bug: a failed envelope remains in incoming and gets retried forever. Return JSON only with exactly four keys. quarantine must be the Python path expression for incoming + env.name + '.error'. diagnostics must be the Python path expression for incoming + env.name + '.error.log'. action_move must be exactly MOVE_ENV_TO_QUARANTINE. action_write must be exactly WRITE_PROCESS_DIAGNOSTICS. No prose."""
+          prompt="""You are a bounded engineering BUILDER. Choose the safe semantic operations for this bug: a failed envelope remains in incoming and gets retried forever. Return JSON only with exactly these four keys and values: quarantine_suffix must be .error; diagnostics_suffix must be .error.log; action_move must be MOVE_ENV_TO_QUARANTINE; action_write must be WRITE_PROCESS_DIAGNOSTICS. These are semantic choices, not Python syntax. No prose and no extra keys."""
           print(json.dumps({
             'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
-            'options':{'temperature':0,'num_ctx':2048,'num_predict':96},'think':False
+            'options':{'temperature':0,'num_ctx':2048,'num_predict':80},'think':False
           }))
           PY
           curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/builder-request.json http://127.0.0.1:11434/api/generate > /tmp/builder.api.json
@@ -72,13 +72,13 @@ jobs:
           from pathlib import Path
           api=json.load(open('/tmp/builder.api.json')); obj=json.loads(api['response'])
           expected={
-            'quarantine':"incoming/(env.name+'.error')",
-            'diagnostics':"incoming/(env.name+'.error.log')",
+            'quarantine_suffix':'.error',
+            'diagnostics_suffix':'.error.log',
             'action_move':'MOVE_ENV_TO_QUARANTINE',
             'action_write':'WRITE_PROCESS_DIAGNOSTICS'
           }
           assert obj==expected, obj
-          # Trusted compiler: only this validated DSL can become Python.
+          # Trusted deterministic compiler: validated DSL only, no model-authored syntax.
           block="\n".join([
             '        else:',
             "            quarantine=incoming/(env.name+'.error')",
@@ -172,7 +172,7 @@ jobs:
           from pathlib import Path
           def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
           Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
-            'schema':'rotclaw.delegated-engineering-evidence.v5',
+            'schema':'rotclaw.delegated-engineering-evidence.v6',
             'mission_id':'${{ steps.mission.outputs.mission_id }}',
             'source_commit':'${{ github.sha }}',
             'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
