@@ -1,0 +1,33 @@
+{
+  "schema": "rotclaw.cross-repo-mission.v1",
+  "mission_id": "cos-identity-json-nfc-001",
+  "risk_class": "A2",
+  "goal": "Harden COS Graph Engine deterministic identity so canonical serialization accepts only plain JSON-like values, rejects ambiguous/executable object forms, and normalizes Unicode to NFC without expanding into provider case rules or registry immutability.",
+  "target_repository": "rotprods/cos-graph-engine",
+  "target_ref": "hardening/w3-deterministic-identity",
+  "target_commit": "baea5de6ac086860832256bf08e1f9e0a46f67d0",
+  "work_branch": "agent/rotclaw-w3-json-nfc",
+  "allowed_paths": [
+    "packages/core/src/identity.ts",
+    "scripts/test-identity-hardening.ts"
+  ],
+  "denied_paths": [
+    ".github/**",
+    "package.json",
+    "package-lock.json",
+    "packages/core/src/index.ts",
+    "docs/**"
+  ],
+  "allowed_actions": ["read", "edit", "test"],
+  "acceptance": [
+    "stableSerialize rejects undefined, bigint, unsupported object prototypes, accessors, symbol properties, sparse arrays, and arrays with extra enumerable properties.",
+    "String values, object keys, authority, resource type, and resource IDs normalize to Unicode NFC before canonicalization.",
+    "Distinct object keys that collapse to the same NFC key are rejected.",
+    "Plain null-prototype objects remain supported.",
+    "Object insertion order remains deterministic.",
+    "A dedicated regression suite proves every listed boundary.",
+    "Planner, Builder, Test Engineer, Security Reviewer, and Code Reviewer are separated roles.",
+    "No agent receives Git write or merge authority.",
+    "Exactly two target-repository files change."
+  ]
+}
