@@ -32,6 +32,8 @@ jobs:
       - run: python scripts/promotion_check.py
       - name: Delegated mission contract
         run: python scripts/mission_gate.py delegation/example.mission.json
+      - name: Minimum-sufficient execution policy
+        run: python scripts/minimum_sufficient_check.py
       - name: Sentinel frontier bridge contract
         run: python scripts/frontier_bridge_check.py
       - name: Frontier result integrity and replay contract
