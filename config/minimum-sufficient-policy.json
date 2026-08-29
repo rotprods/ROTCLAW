@@ -1,0 +1,51 @@
+{
+  "schema": "rotclaw.minimum-sufficient-policy.v1",
+  "default_mode": "LEAN",
+  "principles": [
+    "Think systemically. Change minimally. Test proportionally to risk.",
+    "A large understanding does not require a large diff.",
+    "Minimal implementation does not mean minimal assurance."
+  ],
+  "systemic_risk_triggers": [
+    "authority",
+    "security",
+    "secrets",
+    "pii",
+    "money",
+    "persistence",
+    "migration",
+    "concurrency",
+    "event_ordering",
+    "idempotency",
+    "side_effects",
+    "recovery",
+    "external_provider",
+    "public_api",
+    "schema",
+    "multi_agent_coordination"
+  ],
+  "model_tiers": {
+    "mechanical": "LIGHT",
+    "localized_logic": "MEDIUM",
+    "systemic": "STRONG"
+  },
+  "lean_limits": {
+    "max_files": 5,
+    "max_new_dependencies": 0,
+    "max_new_abstractions": 1,
+    "max_new_config_layers": 0,
+    "max_new_services": 0,
+    "max_new_state_stores": 0,
+    "max_new_tests": 2
+  },
+  "required_plan_fields": [
+    "goal",
+    "non_goals",
+    "acceptance",
+    "untouched",
+    "change_type",
+    "risk_triggers",
+    "complexity_budget",
+    "test_plan"
+  ]
+}
