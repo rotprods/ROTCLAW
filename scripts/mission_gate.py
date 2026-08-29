@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 ALLOWED_ACTIONS={"read","edit","test","commit","push_branch","open_pr"}
 PROTECTED_BRANCHES={"main","master","production","prod"}
+SUPPORTED_SCHEMAS={"rotclaw.mission.v1","rotclaw.mission.v2"}
 
 def fail(msg):
     print("MISSION_BLOCKED",msg,sep="\n"); sys.exit(1)
@@ -16,7 +17,7 @@ def validate(m):
     required=["schema","mission_id","goal","risk_class","repository","base_branch","work_branch","allowed_paths","denied_paths","allowed_actions","acceptance"]
     missing=[k for k in required if k not in m]
     if missing: fail("missing:"+",".join(missing))
-    if m["schema"]!="rotclaw.mission.v1": fail("unsupported_schema")
+    if m["schema"] not in SUPPORTED_SCHEMAS: fail("unsupported_schema")
     if m["risk_class"] not in {"A0","A1","A2","A3"}: fail("invalid_risk_class")
     if m["risk_class"]=="A3": fail("A3_requires_explicit_non_autonomous_authorization")
     if not m["work_branch"].startswith(("agent/","feat/","fix/","reconstruct/","chore/")): fail("unsafe_work_branch_prefix")
@@ -26,6 +27,15 @@ def validate(m):
     if unknown: fail("unknown_actions:"+",".join(sorted(unknown)))
     if m["risk_class"] in {"A0","A1"} and ({"push_branch","open_pr"}&set(m["allowed_actions"])): fail("external_action_exceeds_risk_class")
     if m.get("requires_live") and os.environ.get("ROT_ALLOW_LIVE_MISSION")!="1": fail("live_mission_requires_ROT_ALLOW_LIVE_MISSION=1")
+    if m["schema"]=="rotclaw.mission.v2":
+        try:
+            from minimum_sufficient import validate_execution_policy
+            policy=json.loads((ROOT/"config"/"minimum-sufficient-policy.json").read_text())
+            validate_execution_policy(m,policy)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            fail("minimum_sufficient_gate_error:"+str(exc))
 
 def changed_files(base):
     try:
@@ -65,6 +75,7 @@ def main():
     if args.check_worktree: check_paths(worktree_files(),m)
     print("MISSION_PASS")
     print("mission_id="+m["mission_id"])
+    print("schema="+m["schema"])
     print("risk_class="+m["risk_class"])
     print("work_branch="+m["work_branch"])
     print("actions="+",".join(m["allowed_actions"]))
