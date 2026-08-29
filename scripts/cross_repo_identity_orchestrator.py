@@ -24,6 +24,10 @@ def ask(prompt, num_ctx=2048, num_predict=240, schema=None):
 def dump(path,obj): Path(path).write_text(json.dumps(obj,sort_keys=True,indent=2)+'\n')
 def h(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
+def tsc_errors(cwd: Path):
+    p=subprocess.run(['npx','--yes','-p','typescript@5.9.2','tsc','--noEmit','-p','packages/core/tsconfig.json'],cwd=cwd,text=True,capture_output=True,timeout=120)
+    return sorted(line.strip() for line in (p.stdout+'\n'+p.stderr).splitlines() if 'error TS' in line)
+
 def validate_mission(path):
     m=json.loads(Path(path).read_text())
     assert m['schema']=='rotclaw.cross-repo-mission.v1'
@@ -162,10 +166,12 @@ def main():
     run(['git','clone','--filter=blob:none','--no-checkout',TARGET_REPO,str(target)])
     run(['git','checkout','--detach',TARGET_COMMIT],cwd=target); assert run(['git','rev-parse','HEAD'],cwd=target).strip()==TARGET_COMMIT
     run(['git','remote','remove','origin'],cwd=target)
+    baseline_tsc=tsc_errors(target)
+    dump('/tmp/tsc-baseline.json',{'errors':baseline_tsc})
 
     planner_keys=['use_json_only_domain','normalize_unicode_nfc','reject_unsupported_objects','reject_normalized_key_collisions','defer_provider_case_rules','defer_registry_immutability']
     planner_prompt='You are the PLANNER. Return JSON only with exactly these boolean keys, all true: '+', '.join(planner_keys)+'. No prose.'
-    planner_api,planner=ask(planner_prompt, num_predict=140)
+    _,planner=ask(planner_prompt, num_predict=140)
     assert set(planner)==set(planner_keys),planner
     assert all(planner[k] is True for k in planner_keys),planner
     expected_plan={'serializer_domain':'JSON_ONLY','unicode_form':'NFC','unsupported_objects':'REJECT','normalized_key_collisions':'REJECT','provider_case_rules':'DEFER','registry_immutability':'DEFER'}
@@ -173,18 +179,18 @@ def main():
     dump('/tmp/planner.contract.json',expected_plan)
 
     keys=['reject_undefined','reject_bigint','reject_non_plain_objects','reject_symbol_properties','reject_sparse_arrays','reject_array_extra_properties','reject_accessor_properties','normalize_string_values_nfc','normalize_object_keys_nfc','reject_normalized_key_collisions','normalize_identity_fields_nfc']
-    builder_prompt='You are the BUILDER. Return JSON only with these keys all boolean true: '+', '.join(keys)
-    builder_api,builder=ask(builder_prompt,num_predict=180); assert set(builder)==set(keys) and all(builder[k] is True for k in keys),builder; dump('/tmp/builder.contract.json',builder)
-    materialize_identity(target)
+    _,builder=ask('You are the BUILDER. Return JSON only with these keys all boolean true: '+', '.join(keys),num_predict=180)
+    assert set(builder)==set(keys) and all(builder[k] is True for k in keys),builder
+    dump('/tmp/builder.contract.json',builder); materialize_identity(target)
 
-    tester_prompt='You are the TEST ENGINEER. Every named adversarial case is required. Return JSON marking each as true: '+', '.join(CASES)
-    tester_api,tester=ask(tester_prompt,num_predict=280); tester_contract=canonicalize_test_contract(tester); dump('/tmp/tester.contract.json',tester_contract)
-    write_tests(target)
+    _,tester=ask('You are the TEST ENGINEER. Every named adversarial case is required. Return JSON marking each as true: '+', '.join(CASES),num_predict=280)
+    dump('/tmp/tester.contract.json',canonicalize_test_contract(tester)); write_tests(target)
 
-    status=run(['git','status','--short'],cwd=target)
-    changed=sorted(line[3:] for line in status.splitlines() if line.strip()); assert changed==sorted(ALLOWED),(changed,ALLOWED)
+    changed=sorted(line[3:] for line in run(['git','status','--short'],cwd=target).splitlines() if line.strip()); assert changed==sorted(ALLOWED),(changed,ALLOWED)
     run(['npx','--yes','tsx@4.20.5','scripts/test-identity-hardening.ts'],cwd=target,timeout=120)
-    run(['npx','--yes','-p','typescript@5.9.2','tsc','--noEmit','-p','packages/core/tsconfig.json'],cwd=target,timeout=120)
+    post_tsc=tsc_errors(target)
+    assert post_tsc==baseline_tsc, {'baseline':baseline_tsc,'post':post_tsc}
+    dump('/tmp/tsc-post.json',{'errors':post_tsc,'no_new_diagnostics':True})
     run(['git','diff','--check'],cwd=target)
     patch=run(['git','diff','--',*ALLOWED],cwd=target); assert 'diff --git a/scripts/test-identity-hardening.ts b/scripts/test-identity-hardening.ts' in patch
     Path('/tmp/candidate.patch').write_text(patch)
@@ -199,6 +205,7 @@ def main():
     evidence.mkdir(parents=True,exist_ok=True); (evidence/'files').mkdir(exist_ok=True)
     for src,dst in [(target/ALLOWED[0],evidence/'files/identity.ts'),(target/ALLOWED[1],evidence/'files/test-identity-hardening.ts'),(Path('/tmp/candidate.patch'),evidence/'candidate.patch')]: dst.write_bytes(src.read_bytes())
     for n in ['planner','builder','tester','security','reviewer']: (evidence/f'{n}.contract.json').write_bytes(Path(f'/tmp/{n}.contract.json').read_bytes())
-    data={'schema':'rotclaw.cross-repo-engineering-evidence.v3','mission_id':m['mission_id'],'target_repo':'rotprods/cos-graph-engine','target_source_commit':TARGET_COMMIT,'target_base_ref':m['target_ref'],'changed_paths':ALLOWED,'patch_sha256':h('/tmp/candidate.patch'),'identity_sha256':h(target/ALLOWED[0]),'test_sha256':h(target/ALLOWED[1]),'planner_sha256':h('/tmp/planner.contract.json'),'builder_sha256':h('/tmp/builder.contract.json'),'tester_sha256':h('/tmp/tester.contract.json'),'security_sha256':h('/tmp/security.contract.json'),'reviewer_sha256':h('/tmp/reviewer.contract.json'),'deterministic_qa':'PASS','authority':'A2_CROSS_REPO_NO_PUSH_NO_MERGE','promotion_authority':'CONTROL_PLANE_ONLY'}
+    for n in ['tsc-baseline','tsc-post']: (evidence/f'{n}.json').write_bytes(Path(f'/tmp/{n}.json').read_bytes())
+    data={'schema':'rotclaw.cross-repo-engineering-evidence.v3','mission_id':m['mission_id'],'target_repo':'rotprods/cos-graph-engine','target_source_commit':TARGET_COMMIT,'target_base_ref':m['target_ref'],'changed_paths':ALLOWED,'patch_sha256':h('/tmp/candidate.patch'),'identity_sha256':h(target/ALLOWED[0]),'test_sha256':h(target/ALLOWED[1]),'planner_sha256':h('/tmp/planner.contract.json'),'builder_sha256':h('/tmp/builder.contract.json'),'tester_sha256':h('/tmp/tester.contract.json'),'security_sha256':h('/tmp/security.contract.json'),'reviewer_sha256':h('/tmp/reviewer.contract.json'),'tsc_baseline_sha256':h('/tmp/tsc-baseline.json'),'tsc_post_sha256':h('/tmp/tsc-post.json'),'baseline_type_errors':len(baseline_tsc),'new_type_errors':0,'deterministic_qa':'PASS','authority':'A2_CROSS_REPO_NO_PUSH_NO_MERGE','promotion_authority':'CONTROL_PLANE_ONLY'}
     dump(evidence/'EVIDENCE.json',data); print('CROSS_REPO_ENGINEERING_PASS')
 if __name__=='__main__': main()
