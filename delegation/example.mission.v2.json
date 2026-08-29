@@ -1,0 +1,41 @@
+{
+  "schema": "rotclaw.mission.v2",
+  "mission_id": "rotclaw-example-v2-001",
+  "goal": "Fix one localized parser bug with the minimum sufficient patch.",
+  "risk_class": "A1",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "main",
+  "work_branch": "fix/example-v2-parser",
+  "allowed_paths": ["scripts/parser.py", "tests/test_parser.py"],
+  "denied_paths": [".github/**", "config/**", ".secrets/**"],
+  "allowed_actions": ["read", "edit", "test"],
+  "acceptance": ["Parser accepts the required input", "Existing behavior remains green"],
+  "requires_live": false,
+  "execution_policy": {
+    "goal": "Fix one localized parser bug with the minimum sufficient patch.",
+    "non_goals": ["No parser redesign", "No new dependency"],
+    "acceptance": ["Parser accepts the required input", "Existing behavior remains green"],
+    "untouched": ["Public API", "Deployment", "Unrelated modules"],
+    "change_type": "localized_logic",
+    "risk_triggers": [],
+    "mode": "LEAN",
+    "model_tier": "MEDIUM",
+    "complexity_budget": {
+      "max_files": 2,
+      "max_new_dependencies": 0,
+      "max_new_abstractions": 0,
+      "max_new_config_layers": 0,
+      "max_new_services": 0,
+      "max_new_state_stores": 0
+    },
+    "test_plan": {
+      "existing_tests_first": true,
+      "new_tests": [
+        {
+          "verifies": "Changed parser behavior",
+          "existing_tests_would_miss": true
+        }
+      ]
+    }
+  }
+}
