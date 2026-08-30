@@ -21,6 +21,8 @@ bounded rotclaw.mission.v2
         ↓
 Builder
         ↓
+post-execution budget reconciliation
+        ↓
 risk-proportional assurance
         ↓
 Reviewer / PR
@@ -100,6 +102,40 @@ Each of these consumes explicit complexity budget:
 - runtime service;
 - state store;
 - compatibility path.
+
+## Post-execution budget reconciliation
+
+Planning constraints are not enough. Before a `mission.v2` artifact may be promoted, the trusted harness can run:
+
+```bash
+python scripts/mission_gate.py <mission.json> --check-worktree --check-budget
+```
+
+`budget_reconcile.py` observes the real worktree and fails closed when execution exceeds the declared budget. The current measurable dimensions are:
+
+- changed file count;
+- new test definitions;
+- changed dependency manifests;
+- new config-layer files;
+- new service/daemon/worker files;
+- new state/store/database files;
+- newly-added class/interface/protocol/trait abstractions.
+
+For zero-budget dimensions, any observed occurrence blocks promotion. The reconciler is deliberately conservative: it detects measurable budget drift; it does not pretend heuristics can infer architectural intent.
+
+Example:
+
+```text
+declared max_files = 2
+observed files      = 2
+→ PASS
+
+declared max_files = 1
+observed files      = 2
+→ BUDGET_DRIFT / BLOCKED
+```
+
+The artifact may report `PASS`; only the trusted reconciler can attest that observed execution stayed within the declared plan.
 
 ## Model allocation
 
