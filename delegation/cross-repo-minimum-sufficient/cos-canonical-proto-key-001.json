@@ -76,5 +76,6 @@
       "independent strong control-plane review"
     ]
   },
-  "target_commit": "789edef87549d4f173de03f73e54f5b6193c2e98"
+  "target_commit": "789edef87549d4f173de03f73e54f5b6193c2e98",
+  "orchestrator_revision": 1
 }
