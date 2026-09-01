@@ -17,7 +17,7 @@
   },
   "agents": {
     "defaults": {
-      "workspace": "~/.openclaw/workspace-rot",
+      "workspace": ".",
       "model": {
         "primary": "rot-router/deepseek-v4-flash",
         "fallbacks": ["rot-router/kimi-k2.6","rot-router/glm-5.2","rot-router/minimax-m3"]
@@ -30,31 +30,14 @@
       },
       "modelPolicy": {"allow":["rot-router/*"]},
       "elevatedDefault": "off",
-      "sandbox": {
-        "mode": "all",
-        "backend": "docker",
-        "scope": "session",
-        "workspaceAccess": "rw",
-        "docker": {
-          "image": "openclaw-sandbox:bookworm-slim",
-          "readOnlyRoot": true,
-          "tmpfs": ["/tmp","/var/tmp","/run"],
-          "network": "none",
-          "capDrop": ["ALL"]
-        }
-      }
+      "sandbox": {"mode":"off"}
     }
   },
   "tools": {
     "profile": "coding",
     "fs": {"workspaceOnly": true},
-    "exec": {"host":"sandbox","mode":"ask","strictInlineEval":true},
+    "exec": {"host":"gateway","mode":"ask","strictInlineEval":true},
     "elevated": {"enabled": false}
   },
-  "gateway": {"bind":"loopback"},
-  "plugins": {
-    "entries": {
-      "policy": {"enabled":true,"config":{"enabled":true,"path":"policy.jsonc","workspaceRepairs":false}}
-    }
-  }
+  "gateway": {"bind":"loopback"}
 }

@@ -1,0 +1,27 @@
+{
+  "_status": "HISTORICAL_REFERENCE_ONLY",
+  "_note": "Recovered from v1. Do not treat as current-schema-valid until validated against the pinned OpenClaw runtime.",
+  "agents": {
+    "defaults": {
+      "workspace": "~/.openclaw/workspace-rot",
+      "model": {
+        "primary": "ollama-cloud/deepseek-v4-flash",
+        "fallbacks": ["ollama-cloud/glm-5.2","ollama-cloud/minimax-m3","ollama-cloud/kimi-k2.6"]
+      },
+      "elevatedDefault": "off",
+      "sandbox": {
+        "mode": "all",
+        "backend": "docker",
+        "scope": "session",
+        "workspaceAccess": "rw",
+        "docker": {"image":"openclaw-sandbox:bookworm-slim","readOnlyRoot":true,"tmpfs":["/tmp","/var/tmp","/run"],"network":"none","capDrop":["ALL"]}
+      }
+    }
+  },
+  "tools": {
+    "fs": {"workspaceOnly": true},
+    "exec": {"host":"sandbox","security":"allowlist","ask":"always"},
+    "elevated": {"enabled": false}
+  },
+  "gateway": {"bind":"loopback"}
+}

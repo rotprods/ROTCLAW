@@ -1,0 +1,15 @@
+{
+  "schema": "rotclaw.local-sentinel.v1",
+  "poll_interval_seconds": 2,
+  "heartbeat_seconds": 10,
+  "max_mission_seconds": 90,
+  "local_model": "qwen3:0.6b-q4_K_M",
+  "local_provider": "ollama",
+  "local_endpoint": "http://127.0.0.1:11434",
+  "frontier_enabled": false,
+  "self_heal_ollama": true,
+  "allowed_mission_types": ["health", "classify", "summarize", "route", "dispatch", "local_agent"],
+  "max_prompt_chars": 6000,
+  "workspace": "/mnt/data/rotclaw-local/openclaw-home/.openclaw/workspace",
+  "frontier_queue": "/mnt/data/rotclaw-local/sentinel/frontier"
+}

@@ -8,12 +8,74 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - run: python -m py_compile scripts/*.py router/*.py
-      - run: bash -n context/RUNTIME_PREFLIGHT.sh
+      - run: bash -n context/RUNTIME_PREFLIGHT.sh scripts/install.sh scripts/bootstrap-private-env.sh scripts/run-router.sh scripts/verify-live.sh scripts/gha_openclaw_qualification.sh scripts/real_provider_qualification.sh scripts/node01_bootstrap.sh scripts/node01_install_service.sh
+      - name: Workflow security invariants
+        run: python scripts/workflow_security_check.py
+      - name: Real-provider missing-secret fail closed
+        shell: bash
+        run: |
+          set +e
+          env -u OLLAMA_API_KEY bash scripts/real_provider_qualification.sh /tmp/rotclaw-no-secret >/tmp/rotclaw-no-secret.out 2>&1
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          grep -q 'OLLAMA_API_KEY is required' /tmp/rotclaw-no-secret.out
+      - name: Router runtime model mapping
+        run: python scripts/router_mapping_check.py
+      - run: python scripts/ancestry_check.py
+      - run: python scripts/config_static_check.py
+      - run: python scripts/promotion_check.py
+      - name: Delegated mission contract
+        run: python scripts/mission_gate.py delegation/example.mission.json
+      - name: Minimum-sufficient execution policy
+        run: python scripts/minimum_sufficient_check.py
+      - name: Post-execution budget reconciliation
+        run: python scripts/budget_reconcile_check.py
+      - name: Sentinel frontier bridge contract
+        run: python scripts/frontier_bridge_check.py
+      - name: Frontier result integrity and replay contract
+        run: python scripts/frontier_result_check.py
+      - name: Relay daemon and result consumer contract
+        run: python scripts/relay_daemon_check.py
       - run: python scripts/qa.py
       - run: python scripts/adversarial.py
       - run: python scripts/benchmark.py
+      - name: Node01 systemd dry-run contract
+        shell: bash
+        run: |
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/state" "$tmp/config"
+          printf 'OLLAMA_API_KEY=placeholder\nROT_ROUTER_TOKEN=placeholder\n' > "$tmp/config/node01.env"
+          chmod 600 "$tmp/config/node01.env"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/state/start-router.sh"
+          chmod 700 "$tmp/state/start-router.sh"
+          HOME="$tmp" \
+          XDG_CONFIG_HOME="$tmp/xdg" \
+          ROTCLAW_STATE_ROOT="$tmp/state" \
+          ROTCLAW_CONFIG_ROOT="$tmp/config" \
+          ROTCLAW_SERVICE_DRY_RUN=1 \
+          bash scripts/node01_install_service.sh
+          test -f "$tmp/xdg/systemd/user/rotclaw-router.service"
+          grep -q 'NoNewPrivileges=true' "$tmp/xdg/systemd/user/rotclaw-router.service"
+          grep -q 'ProtectSystem=strict' "$tmp/xdg/systemd/user/rotclaw-router.service"
+      - name: Node01 checkpoint contract
+        run: python scripts/node01_checkpoint.py
+      - name: Live qualification contract (non-live)
+        run: python scripts/live_qualification.py
+      - name: Assert CI does not fake live qualification
+        run: |
+          python - <<'PY'
+          import json
+          q=json.load(open('qa/LIVE_QUALIFICATION.json'))
+          assert q['mode']=='CONTRACT_ONLY'
+          assert q['overall_state']=='NOT_QUALIFIED'
+          assert all(v['state'] != 'PASS' for v in q['dimensions'].values())
+          c=json.load(open('qa/NODE01_CHECKPOINT.json'))
+          assert c['secret_values_recorded'] is False
+          print('LIVE_CLAIM_HYGIENE_PASS')
+          PY

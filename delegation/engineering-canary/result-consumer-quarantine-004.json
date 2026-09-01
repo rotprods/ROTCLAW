@@ -1,0 +1,21 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "result-consumer-quarantine-004",
+  "goal": "Prevent malformed frontier result envelopes from being reprocessed forever by quarantining a generic ingest failure exactly once while preserving diagnostics and all existing success/replay semantics.",
+  "risk_class": "A2",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "reconstruct/v6-full-composite",
+  "work_branch": "agent/result-consumer-quarantine",
+  "allowed_paths": ["scripts/result_consumer.py", "scripts/relay_daemon_check.py"],
+  "denied_paths": [".github/**", "config/**", "context/**", "router/**", "delegation/**"],
+  "allowed_actions": ["read", "edit", "test"],
+  "acceptance": [
+    "Generic ingest failures are atomically moved out of active incoming processing.",
+    "Diagnostics are persisted separately.",
+    "A second consumer invocation does not retry the same failed envelope.",
+    "Success and replay return-code 2 semantics remain unchanged.",
+    "A deterministic regression oracle proves quarantine-once behavior.",
+    "Only scripts/result_consumer.py and scripts/relay_daemon_check.py change.",
+    "Builder and reviewer have no Git write or merge authority."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "bridge-canary-001",
+  "goal": "Create docs/bridge-smoke.md containing a short note that ROTCLAW mission bridge execution succeeded, then stop. Do not modify any other tracked path.",
+  "risk_class": "A1",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "main",
+  "work_branch": "agent/bridge-canary-001",
+  "allowed_paths": ["docs/bridge-smoke.md"],
+  "denied_paths": [".github/**", "config/**", "router/**", "scripts/**", ".secrets/**", "delegation/**"],
+  "allowed_actions": ["read", "edit", "test"],
+  "acceptance": [
+    "docs/bridge-smoke.md exists",
+    "No other tracked path is modified",
+    "Mission handoff is produced as CI artifact"
+  ],
+  "requires_live": false,
+  "expires_at_utc": null
+}

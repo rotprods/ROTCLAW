@@ -1,0 +1,51 @@
+name: build-local-openclaw-runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-local-openclaw-runtime.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.3'
+      - name: Build portable OpenClaw runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rotclaw-local-openclaw
+          mkdir -p "$ROOT/bin" "$ROOT/app"
+          cp "$(command -v node)" "$ROOT/bin/node"
+          npm install --prefix "$ROOT/app" --omit=dev openclaw@2026.8.1-beta.3
+          cat > "$ROOT/openclaw" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export PATH="$ROOT/bin:$ROOT/app/node_modules/.bin:$PATH"
+          exec "$ROOT/app/node_modules/.bin/openclaw" "$@"
+          EOF
+          chmod +x "$ROOT/openclaw"
+          "$ROOT/openclaw" --version | tee "$ROOT/version.txt"
+          tar -C /tmp -czf /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz rotclaw-local-openclaw
+          sha256sum /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz > /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz.sha256
+          du -sh "$ROOT" /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-openclaw-local-runtime
+          path: |
+            /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz
+            /tmp/ROTCLAW_OPENCLAW_LOCAL_RUNTIME.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

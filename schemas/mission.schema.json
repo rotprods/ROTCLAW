@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rot.local/schemas/mission.v1.json",
+  "title": "ROTCLAW Delegated Mission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema","mission_id","goal","risk_class","repository","base_branch","work_branch","allowed_paths","denied_paths","allowed_actions","acceptance"],
+  "properties": {
+    "schema": {"const": "rotclaw.mission.v1"},
+    "mission_id": {"type":"string","pattern":"^[A-Za-z0-9._-]{3,128}$"},
+    "goal": {"type":"string","minLength":10},
+    "risk_class": {"enum":["A0","A1","A2","A3"]},
+    "repository": {"type":"string","pattern":"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "base_branch": {"type":"string","minLength":1},
+    "work_branch": {"type":"string","pattern":"^(agent|feat|fix|reconstruct|chore)/[A-Za-z0-9._/-]+$"},
+    "allowed_paths": {"type":"array","minItems":1,"items":{"type":"string"}},
+    "denied_paths": {"type":"array","items":{"type":"string"}},
+    "allowed_actions": {"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["read","edit","test","commit","push_branch","open_pr"]}},
+    "acceptance": {"type":"array","minItems":1,"items":{"type":"string","minLength":3}},
+    "requires_live": {"type":"boolean","default":false},
+    "expires_at_utc": {"type":["string","null"],"format":"date-time"}
+  }
+}

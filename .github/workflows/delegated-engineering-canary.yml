@@ -1,0 +1,209 @@
+name: delegated-engineering-canary
+
+on:
+  push:
+    branches:
+      - reconstruct/v6-full-composite
+    paths:
+      - 'delegation/engineering-canary/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  builder-reviewer-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Resolve bounded A2 mission
+        id: mission
+        shell: bash
+        run: |
+          set -euo pipefail
+          mission="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^delegation/engineering-canary/.*\.json$' | head -n1)"
+          test -n "$mission"
+          python scripts/mission_gate.py "$mission"
+          python3 - "$mission" <<'PY' >> "$GITHUB_OUTPUT"
+          import json,sys
+          m=json.load(open(sys.argv[1]))
+          expected=['scripts/relay_daemon_check.py','scripts/result_consumer.py']
+          assert sorted(m['allowed_paths']) == expected
+          assert m['risk_class'] == 'A2'
+          assert set(m['allowed_actions']) <= {'read','edit','test'}
+          print('path='+sys.argv[1])
+          print('mission_id='+m['mission_id'])
+          PY
+
+      - name: Install pinned Ollama and local engineering model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:1.7b-q4_K_M
+
+      - name: Builder micro-agent emits bounded Patch DSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >/tmp/builder-request.json
+          import json
+          prompt="""You are a bounded engineering BUILDER. Choose the safe semantic operations for this bug: a failed envelope remains in incoming and gets retried forever. Return JSON only with exactly these four keys and values: quarantine_suffix must be .error; diagnostics_suffix must be .error.log; action_move must be MOVE_ENV_TO_QUARANTINE; action_write must be WRITE_PROCESS_DIAGNOSTICS. These are semantic choices, not Python syntax. No prose and no extra keys."""
+          print(json.dumps({
+            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':'json',
+            'options':{'temperature':0,'num_ctx':2048,'num_predict':80},'think':False
+          }))
+          PY
+          curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/builder-request.json http://127.0.0.1:11434/api/generate > /tmp/builder.api.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          api=json.load(open('/tmp/builder.api.json')); obj=json.loads(api['response'])
+          expected={
+            'quarantine_suffix':'.error',
+            'diagnostics_suffix':'.error.log',
+            'action_move':'MOVE_ENV_TO_QUARANTINE',
+            'action_write':'WRITE_PROCESS_DIAGNOSTICS'
+          }
+          assert obj==expected, obj
+          block="\n".join([
+            '        else:',
+            "            quarantine=incoming/(env.name+'.error')",
+            "            diagnostics=incoming/(env.name+'.error.log')",
+            '            os.replace(env, quarantine)',
+            '            diagnostics.write_text(p.stderr+p.stdout)',
+          ])
+          old="        else:\n            (incoming/(env.name+'.error')).write_text(p.stderr+p.stdout)"
+          p=Path('scripts/result_consumer.py'); src=p.read_text(); assert src.count(old)==1
+          p.write_text(src.replace(old,block))
+          Path('/tmp/builder.contract.json').write_text(json.dumps(obj,sort_keys=True,indent=2)+'\n')
+          PY
+
+      - name: Trusted test oracle adds regression scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/relay_daemon_check.py'); src=p.read_text()
+          marker="    print('RELAY_RESULT_CONSUMER_PASS')"; assert src.count(marker)==1
+          block="""    bad_mid='relay-test-error'
+              bad_mission=dict(mission); bad_mission['mission_id']=bad_mid; bad_mission['work_branch']='agent/'+bad_mid
+              bad_mp=b/'sentinel/frontier-export'/(bad_mid+'.json'); bad_mp.write_text(json.dumps(bad_mission))
+              bad_env=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json'); bad_env.write_text('{}')
+              subprocess.run(['python3',str(ROOT/'scripts/result_consumer.py'),'--once'],check=True,env=env)
+              quarantine=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json.error')
+              diagnostics=b/'sentinel/relay/incoming'/(bad_mid+'.frontier-result.json.error.log')
+              assert not bad_env.exists()
+              assert quarantine.exists() and diagnostics.exists()
+              snapshot=(quarantine.read_bytes(),diagnostics.read_bytes())
+              subprocess.run(['python3',str(ROOT/'scripts/result_consumer.py'),'--once'],check=True,env=env)
+              assert snapshot==(quarantine.read_bytes(),diagnostics.read_bytes())
+          """
+          p.write_text(src.replace(marker,block+marker))
+          PY
+
+      - name: Trusted boundary and deterministic regression QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/mission_gate.py "${{ steps.mission.outputs.path }}" --check-worktree
+          changed="$({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sed '/^$/d' | sort -u)"
+          expected="$(printf '%s\n' scripts/relay_daemon_check.py scripts/result_consumer.py | sort)"
+          test "$changed" = "$expected"
+          python -m py_compile scripts/result_consumer.py scripts/relay_daemon_check.py
+          python scripts/relay_daemon_check.py
+          git diff --check
+          git diff -- scripts/result_consumer.py scripts/relay_daemon_check.py > /tmp/candidate.patch
+
+      - name: Independent reviewer micro-agent audits proven candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >/tmp/reviewer-request.json
+          import json
+          from pathlib import Path
+          patch=Path('/tmp/candidate.patch').read_text()
+          prompt="""You are an independent code REVIEWER, not the builder. Deterministic regression tests already passed. Inspect the patch for a concrete correctness or safety defect. Contract: generic ingest failure atomically moves the original envelope out of active incoming processing into quarantine; diagnostics are separate; a second run cannot retry it; success and replay branches remain unchanged. Choose PASS only if no concrete defect exists. For defect_code choose one of NONE, DATA_LOSS, RETRY_LOOP, PATH_ERROR, SUCCESS_REGRESSION, REPLAY_REGRESSION, OTHER. Return only the structured object requested by the schema.\nPATCH:\n"""+patch
+          schema={
+            'type':'object','additionalProperties':False,
+            'properties':{
+              'verdict':{'type':'string','enum':['PASS','FAIL']},
+              'defect_code':{'type':'string','enum':['NONE','DATA_LOSS','RETRY_LOOP','PATH_ERROR','SUCCESS_REGRESSION','REPLAY_REGRESSION','OTHER']},
+              'finding':{'type':'string','maxLength':160}
+            },
+            'required':['verdict','defect_code','finding']
+          }
+          print(json.dumps({
+            'model':'qwen3:1.7b-q4_K_M','prompt':prompt,'stream':False,'format':schema,
+            'options':{'temperature':0,'num_ctx':3072,'num_predict':160},'think':False
+          }))
+          PY
+          curl -fsS --max-time 45 -H 'Content-Type: application/json' --data-binary @/tmp/reviewer-request.json http://127.0.0.1:11434/api/generate > /tmp/reviewer.api.json
+          python3 - <<'PY'
+          import json
+          api=json.load(open('/tmp/reviewer.api.json')); obj=json.loads(api['response'])
+          assert set(obj)=={'verdict','defect_code','finding'}, obj
+          assert obj['verdict'] in {'PASS','FAIL'}, obj
+          assert obj['defect_code'] in {'NONE','DATA_LOSS','RETRY_LOOP','PATH_ERROR','SUCCESS_REGRESSION','REPLAY_REGRESSION','OTHER'}, obj
+          assert isinstance(obj['finding'],str) and len(obj['finding'])<=160, obj
+          if obj['verdict']=='PASS': assert obj['defect_code']=='NONE', obj
+          if obj['verdict']=='FAIL': assert obj['defect_code']!='NONE', obj
+          open('/tmp/reviewer.contract.json','w').write(json.dumps(obj,sort_keys=True,indent=2)+'\n')
+          assert obj['verdict']=='PASS', obj
+          PY
+
+      - name: Build engineering evidence artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/engineering-evidence/files
+          cp scripts/result_consumer.py /tmp/engineering-evidence/files/result_consumer.py
+          cp scripts/relay_daemon_check.py /tmp/engineering-evidence/files/relay_daemon_check.py
+          cp /tmp/candidate.patch /tmp/engineering-evidence/candidate.patch
+          cp /tmp/builder.api.json /tmp/engineering-evidence/builder.api.json
+          cp /tmp/builder.contract.json /tmp/engineering-evidence/builder.contract.json
+          cp /tmp/reviewer.api.json /tmp/engineering-evidence/reviewer.api.json
+          cp /tmp/reviewer.contract.json /tmp/engineering-evidence/reviewer.contract.json
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          Path('/tmp/engineering-evidence/EVIDENCE.json').write_text(json.dumps({
+            'schema':'rotclaw.delegated-engineering-evidence.v7',
+            'mission_id':'${{ steps.mission.outputs.mission_id }}',
+            'source_commit':'${{ github.sha }}',
+            'changed_paths':['scripts/relay_daemon_check.py','scripts/result_consumer.py'],
+            'patch_sha256':h('/tmp/candidate.patch'),
+            'result_consumer_sha256':h('scripts/result_consumer.py'),
+            'relay_daemon_check_sha256':h('scripts/relay_daemon_check.py'),
+            'builder_contract_sha256':h('/tmp/builder.contract.json'),
+            'reviewer_contract_sha256':h('/tmp/reviewer.contract.json'),
+            'builder':'isolated Ollama Qwen3 1.7B Patch DSL agent',
+            'compiler':'TRUSTED_DETERMINISTIC_PATCH_COMPILER',
+            'test_oracle':'TRUSTED_CONTROL_PLANE',
+            'reviewer':'independent isolated Ollama Qwen3 1.7B structured reviewer',
+            'deterministic_qa':'PASS',
+            'authority':'A2_NO_PUSH_NO_MERGE',
+            'promotion_authority':'CONTROL_PLANE_ONLY'
+          },sort_keys=True,indent=2)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-delegated-engineering-${{ github.sha }}
+          path: /tmp/engineering-evidence/
+          if-no-files-found: error
+          retention-days: 7

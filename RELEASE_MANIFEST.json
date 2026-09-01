@@ -1,0 +1,32 @@
+{
+  "schema": "rotclaw.release-manifest.v1",
+  "release": "v6",
+  "release_type": "FULL_COMPOSITE",
+  "status": "RELEASE_CANDIDATE",
+  "base_public_lineage": "rotprods/ROTCLAW@main",
+  "ancestry": [
+    {"source":"v1","type":"FULL_OVERLAY","role":"restore operational config/security/workspace/skills"},
+    {"source":"v3/v4","type":"CONTEXT_PLUS_EVIDENCE","role":"retain graph/epistemics/QA/recovery"},
+    {"source":"v5","type":"PUBLISHED_CONTROL_PLANE","role":"retain router/provider template/CI/public-safe brain"}
+  ],
+  "required_components": [
+    "AGENTS.md","SOUL.md","SECURITY.md",
+    "brain/BRAIN_ARCHITECTURE_V2.md","brain/ANCESTRY_GATE.md","docs/PROMOTION_PROTOCOL.md","docs/P5_P7_IMPLEMENTATION_STATE.md","docs/NODE01_DEPLOYMENT.md",
+    "config/openclaw.example.json","config/model-routing.json","config/policy.jsonc",
+    ".github/workflows/openclaw-host-qualification.yml",".github/workflows/real-provider-qualification.yml",
+    "qualification/Dockerfile.openclaw-sandbox",
+    "scripts/install.sh","scripts/bootstrap-private-env.sh","scripts/run-router.sh","scripts/verify-live.sh","scripts/ancestry_check.py","scripts/config_static_check.py","scripts/promotion_check.py","scripts/live_qualification.py","scripts/mission_gate.py","scripts/gha_openclaw_qualification.sh","scripts/real_provider_qualification.sh","scripts/node01_bootstrap.sh","scripts/mock_openai_provider.py",
+    "schemas/live-qualification.schema.json","schemas/mission.schema.json",
+    "delegation/POLICY.md","delegation/example.mission.json",
+    "security/THREAT_MODEL.md","workspace/IDENTITY.md","workspace/TOOLS.md",
+    "skills/define-goal/SKILL.md","skills/gauntlet-loop/SKILL.md","skills/graph-engineering/SKILL.md","skills/model-router/SKILL.md","skills/vibecarrusel/SKILL.md",
+    "context/SYSTEM_GRAPH.json","context/RUNTIME_PREFLIGHT.sh","router/model_router.py","qa/GAUNTLET_50_LEDGER.json"
+  ],
+  "executed_host_qualification": {
+    "scope": "EPHEMERAL_GITHUB_HOST",
+    "openclaw": "2026.8.1-beta.3",
+    "evidence": "EXECUTED",
+    "real_provider": false
+  },
+  "live_qualification": "NOT_YET_VERIFIED"
+}

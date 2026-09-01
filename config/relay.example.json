@@ -1,0 +1,13 @@
+{
+  "transport": "filesystem",
+  "poll_seconds": 15,
+  "filesystem": {
+    "outgoing_dir": "/mnt/data/rotclaw-local/sentinel/relay-wire/out",
+    "incoming_dir": "/mnt/data/rotclaw-local/sentinel/relay-wire/in"
+  },
+  "github_cli": {
+    "repo": "rotprods/ROTCLAW",
+    "branch": "reconstruct/v6-full-composite",
+    "artifact_dir": "/mnt/data/rotclaw-local/sentinel/relay/artifacts"
+  }
+}

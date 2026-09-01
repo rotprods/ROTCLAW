@@ -1,0 +1,21 @@
+{
+  "schema": "rotclaw.mission.v1",
+  "mission_id": "relay-canary-005",
+  "goal": "Produce one short factual sentence describing this bounded relay canary. The trusted harness will add provenance and authority metadata after validating scope.",
+  "risk_class": "A1",
+  "repository": "rotprods/ROTCLAW",
+  "base_branch": "reconstruct/v6-full-composite",
+  "work_branch": "agent/relay-canary",
+  "allowed_paths": ["docs/relay-canary.md"],
+  "denied_paths": [".github/**","config/**","router/**","scripts/**",".secrets/**","delegation/**"],
+  "allowed_actions": ["read","edit","test"],
+  "acceptance": [
+    "Agent-authored content is bounded and sanitized",
+    "Only docs/relay-canary.md is modified",
+    "Authority/provenance attestation is added by the trusted harness, not the model",
+    "Mission boundary validation passes",
+    "Review artifact contains file, patch, model summary and evidence"
+  ],
+  "requires_live": false,
+  "expires_at_utc": null
+}

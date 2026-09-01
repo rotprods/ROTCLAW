@@ -1,0 +1,39 @@
+{
+  "schema": "rotclaw.node-observation.v1",
+  "node_id": "chatgpt-sandbox-control-worker",
+  "captured_at": "2026-08-27T11:03:00Z",
+  "epistemic_status": "OBSERVED",
+  "ttl_seconds": 3600,
+  "role": "CONTROL_WORKER",
+  "production_authority": false,
+  "runtime": {
+    "os": "Linux x86_64",
+    "kernel": "6.18.35",
+    "cpu_visible": 5,
+    "memory_cgroup_bytes": 4294967296,
+    "root_filesystem": "ext4 rw",
+    "node": "22.16.0",
+    "npm": "10.9.2",
+    "python": "3.13.5",
+    "git": "2.47.3"
+  },
+  "capabilities": {
+    "filesystem_rw": true,
+    "git_cli": true,
+    "localhost_listeners": true,
+    "external_dns": false,
+    "docker_cli": false,
+    "docker_socket": false,
+    "openclaw_cli": false,
+    "ollama_cli": false
+  },
+  "qualification": {
+    "artifact_qa": "ELIGIBLE",
+    "control_plane_work": "ELIGIBLE",
+    "live_openclaw": "BLOCKED",
+    "live_provider_inference": "BLOCKED",
+    "sandbox_isolation": "BLOCKED",
+    "persistent_daemon": "NOT_PROVEN"
+  },
+  "rule": "Re-probe after TTL. Never use this observation as evidence of future host capabilities."
+}

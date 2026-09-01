@@ -1,0 +1,72 @@
+name: transport-local-ollama
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/transport-local-ollama.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Download and verify official Ollama runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama-linux-amd64.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama-linux-amd64.tar.zst' | sha256sum -c -
+          mkdir -p /tmp/runtime-parts
+          split -b 350M -d -a 2 /tmp/ollama-linux-amd64.tar.zst /tmp/runtime-parts/runtime-
+          ls -lh /tmp/runtime-parts
+      - name: Pull and package Qwen3 0.6B model store
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tar --zstd -xf /tmp/ollama-linux-amd64.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:0.6b-q4_K_M
+          curl -fsS http://127.0.0.1:11434/api/generate -H 'content-type: application/json' \
+            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Respond briefly to prove local inference works","stream":false,"think":false}' \
+            > /tmp/local-smoke.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/local-smoke.json'))
+          assert p.get('done') is True and str(p.get('response','')).strip()
+          PY
+          tar -C "$HOME/.ollama" --zstd -cf /tmp/qwen3-model-store.tar.zst models
+          sha256sum /tmp/qwen3-model-store.tar.zst > /tmp/qwen3-model-store.tar.zst.sha256
+          mkdir -p /tmp/model-parts
+          split -b 300M -d -a 2 /tmp/qwen3-model-store.tar.zst /tmp/model-parts/model-
+          test "$(find /tmp/model-parts -type f | wc -l)" -le 2
+          cp /tmp/qwen3-model-store.tar.zst.sha256 /tmp/model-parts/MODEL_SHA256.txt
+          cp /tmp/local-smoke.json /tmp/model-parts/BUILD_SMOKE.json
+          ls -lh /tmp/model-parts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-runtime-00, path: /tmp/runtime-parts/runtime-00, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-runtime-01, path: /tmp/runtime-parts/runtime-01, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-runtime-02, path: /tmp/runtime-parts/runtime-02, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-runtime-03, path: /tmp/runtime-parts/runtime-03, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: qwen3-model-00, path: /tmp/model-parts/model-00, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: qwen3-model-01, path: /tmp/model-parts/model-01, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: local-ollama-manifest
+          path: |
+            /tmp/model-parts/MODEL_SHA256.txt
+            /tmp/model-parts/BUILD_SMOKE.json
+          compression-level: 0
+          retention-days: 7

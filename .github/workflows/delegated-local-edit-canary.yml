@@ -1,0 +1,170 @@
+name: delegated-local-edit-canary
+
+on:
+  push:
+    branches:
+      - reconstruct/v6-full-composite
+    paths:
+      - 'delegation/local-edit-canary/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  delegated-edit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.3'
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Resolve bounded mission
+        id: mission
+        shell: bash
+        run: |
+          set -euo pipefail
+          mission="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^delegation/local-edit-canary/.*\.json$' | head -n1)"
+          test -n "$mission"
+          python scripts/mission_gate.py "$mission"
+          python3 - "$mission" <<'PY' >> "$GITHUB_OUTPUT"
+          import json,sys
+          m=json.load(open(sys.argv[1]))
+          assert m['allowed_paths']==['docs/relay-canary.md']
+          assert set(m['allowed_actions']) <= {'read','edit','test'}
+          print('path='+sys.argv[1])
+          print('mission_id='+m['mission_id'])
+          PY
+
+      - name: Install pinned Ollama and local model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:0.6b-q4_K_M
+
+      - name: Install OpenClaw and create lean canary config
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g openclaw@2026.8.1-beta.3
+          python3 - <<'PY'
+          import json
+          p=json.load(open('config/openclaw.local-ollama.json'))
+          m=p['models']['providers']['ollama']['models'][0]
+          m['contextWindow']=4096
+          m['maxTokens']=128
+          m.setdefault('params',{})['num_ctx']=4096
+          m['params']['thinking']=False
+          json.dump(p,open('/tmp/openclaw-canary.json','w'),indent=2)
+          PY
+          OPENCLAW_CONFIG_PATH=/tmp/openclaw-canary.json openclaw config validate --json
+
+      - name: Ask OpenClaw for bounded agent-authored content
+        env:
+          MISSION_PATH: ${{ steps.mission.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/prompt.txt
+          import json,os
+          m=json.load(open(os.environ['MISSION_PATH']))
+          print('Write one short factual sentence describing the purpose of this bounded relay canary.')
+          print('Goal:',m['goal'])
+          print('Return only that sentence. Maximum 180 characters. Do not state permissions, authority, provenance or test results.')
+          PY
+          timeout 75s openclaw agent exec "$(cat /tmp/prompt.txt)" \
+            --config /tmp/openclaw-canary.json \
+            --cwd "$PWD" \
+            --model 'ollama/qwen3:0.6b-q4_K_M' \
+            --timeout 60 --local-model-lean \
+            > /tmp/model-output.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          raw=Path('/tmp/model-output.txt').read_text(errors='replace')
+          lines=[x.strip() for x in raw.splitlines() if x.strip()]
+          assert lines, raw
+          summary=lines[0]
+          summary=re.sub(r'\s+/[A-Za-z_][A-Za-z0-9_-]*\s*$', '', summary).strip()
+          assert 10 <= len(summary) <= 180, summary
+          assert '\x00' not in summary and '<tool' not in summary.lower(), summary
+          body=(
+            '# ROTCLAW Relay Canary\n\n'
+            + summary + '\n\n'
+            + '- delegated_by: OpenClaw local Qwen3\n'
+            + '- authority: A1 bounded documentation edit\n'
+            + '- merge_authority: none\n'
+            + '- result: RELAY_CANARY_OK\n'
+          )
+          Path('docs/relay-canary.md').write_text(body)
+          Path('/tmp/model-summary.txt').write_text(summary+'\n')
+          PY
+
+      - name: Enforce mission boundaries and trusted attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/mission_gate.py "${{ steps.mission.outputs.path }}" --check-worktree
+          changed="$({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sed '/^$/d' | sort -u)"
+          test "$(printf '%s\n' "$changed" | wc -l)" -eq 1
+          test "$changed" = 'docs/relay-canary.md'
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=[x.rstrip() for x in Path('docs/relay-canary.md').read_text().splitlines()]
+          assert lines[0]=='# ROTCLAW Relay Canary'
+          for required in [
+            '- delegated_by: OpenClaw local Qwen3',
+            '- authority: A1 bounded documentation edit',
+            '- merge_authority: none',
+            '- result: RELAY_CANARY_OK',
+          ]: assert required in lines, (required,lines)
+          PY
+          python -m py_compile scripts/*.py router/*.py
+
+      - name: Build review artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/delegated-edit
+          cp docs/relay-canary.md /tmp/delegated-edit/relay-canary.md
+          cp /tmp/model-summary.txt /tmp/delegated-edit/model-summary.txt
+          git add -N docs/relay-canary.md
+          git diff --binary -- docs/relay-canary.md > /tmp/delegated-edit/relay-canary.patch
+          test -s /tmp/delegated-edit/relay-canary.patch
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path('/tmp/delegated-edit/relay-canary.md')
+          s=Path('/tmp/delegated-edit/model-summary.txt')
+          Path('/tmp/delegated-edit/EVIDENCE.json').write_text(json.dumps({
+            'schema':'rotclaw.delegated-edit-evidence.v2',
+            'mission_id':'${{ steps.mission.outputs.mission_id }}',
+            'source_commit':'${{ github.sha }}',
+            'changed_paths':['docs/relay-canary.md'],
+            'content_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+            'model_summary_sha256':hashlib.sha256(s.read_bytes()).hexdigest(),
+            'authority':'A1_NO_PUSH_NO_MERGE',
+            'attestation_source':'TRUSTED_HARNESS_NOT_MODEL'
+          },indent=2)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rotclaw-delegated-edit-${{ github.sha }}
+          path: /tmp/delegated-edit/
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,9 @@
+{
+  "_status": "HISTORICAL_REFERENCE_ONLY",
+  "models": {"providers": {"allow": ["ollama-cloud"], "deny": []}},
+  "network": {"privateNetwork": {"allow": false}},
+  "gateway": {"exposure": {"allowNonLoopbackBind": false, "allowTailscaleFunnel": false}, "remote": {"allow": false}},
+  "dataHandling": {"sensitiveLogging": {"requireRedaction": true}, "telemetry": {"denyContentCapture": true}, "memory": {"denySessionTranscriptIndexing": true}},
+  "tools": {"fs": {"requireWorkspaceOnly": true}, "exec": {"allowSecurity": ["allowlist"], "requireAsk": ["always"], "allowHosts": ["sandbox"]}, "elevated": {"allow": false}},
+  "sandbox": {"requireMode": ["all"], "allowBackends": ["docker"], "containers": {"denyHostNetwork": true, "denyContainerNamespaceJoin": true, "denyContainerRuntimeSocketMounts": true, "denyUnconfinedProfiles": true}}
+}

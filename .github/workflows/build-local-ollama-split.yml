@@ -1,0 +1,81 @@
+name: build-local-ollama-split
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-local-ollama-split.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install official Ollama and pull local model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.32.14/ollama-linux-amd64.tar.zst
+          echo 'c620917a71e146ab3a7f893084f066069c4c65d144ef8379a91c3cbe8b27de8f  /tmp/ollama.tar.zst' | sha256sum -c -
+          sudo tar --zstd -xf /tmp/ollama.tar.zst -C /usr
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen3:0.6b-q4_K_M
+          curl -fsS http://127.0.0.1:11434/api/generate -H 'content-type: application/json' \
+            -d '{"model":"qwen3:0.6b-q4_K_M","prompt":"Reply briefly with local ok","stream":false,"think":false}' \
+            | tee /tmp/local-smoke.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/local-smoke.json'))
+          assert p.get('done') is True
+          assert isinstance(p.get('response'),str) and p['response'].strip()
+          PY
+      - name: Build verified portable bundle and split below connector limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rotclaw-local-ollama
+          mkdir -p "$ROOT/bin" "$ROOT/lib" "$ROOT/models"
+          cp -a /usr/bin/ollama "$ROOT/bin/ollama"
+          cp -a /usr/lib/ollama/. "$ROOT/lib/"
+          cp -a "$HOME/.ollama/models/." "$ROOT/models/"
+          cp /tmp/local-smoke.json "$ROOT/local-smoke.json"
+          cat > "$ROOT/start-local.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+          export OLLAMA_MODELS="${OLLAMA_MODELS:-$ROOT/models}"
+          export LD_LIBRARY_PATH="$ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec "$ROOT/bin/ollama" serve
+          EOF
+          chmod +x "$ROOT/start-local.sh"
+          tar -C /tmp --zstd -cf /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst rotclaw-local-ollama
+          sha256sum /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst > /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst.sha256
+          mkdir -p /tmp/chunks
+          split -b 350M -d -a 2 /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst /tmp/chunks/part-
+          ls -lh /tmp/chunks
+          test "$(find /tmp/chunks -type f | wc -l)" -le 7
+          cp /tmp/ROTCLAW_OLLAMA_QWEN3_0.6B_LOCAL.tar.zst.sha256 /tmp/chunks/SHA256SUMS.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-00, path: /tmp/chunks/part-00, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-01, path: /tmp/chunks/part-01, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-02, path: /tmp/chunks/part-02, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-03, path: /tmp/chunks/part-03, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-04, path: /tmp/chunks/part-04, compression-level: 0, retention-days: 7}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-05, path: /tmp/chunks/part-05, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-part-06, path: /tmp/chunks/part-06, compression-level: 0, retention-days: 7, if-no-files-found: ignore}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: ollama-local-manifest, path: /tmp/chunks/SHA256SUMS.txt, compression-level: 0, retention-days: 7}

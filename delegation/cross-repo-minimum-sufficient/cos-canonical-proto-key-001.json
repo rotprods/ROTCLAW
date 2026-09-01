@@ -1,0 +1,29 @@
+{
+  "schema": "rotclaw.mission.v2",
+  "mission_id": "cos-canonical-proto-key-001",
+  "goal": "Preserve an own enumerable __proto__ JSON key as canonical data without mutating the canonicalized output object's prototype.",
+  "risk_class": "A1",
+  "repository": "rotprods/cos-graph-engine",
+  "base_branch": "hardening/phase-05f-observed-outcome-recovery",
+  "work_branch": "agent/canonical-json-proto-key",
+  "allowed_paths": ["packages/core/src/canonical-json.ts", "scripts/test-authority-identity.ts"],
+  "denied_paths": [".github/**", "control-plane/v2/**", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "packages/**/package.json"],
+  "allowed_actions": ["read", "edit", "test"],
+  "acceptance": ["canonicalizeJsonValue preserves an own enumerable __proto__ property as data", "canonicalized output retains Object.prototype rather than adopting the __proto__ value as its prototype", "existing authority identity behavior remains green and no new TypeScript diagnostics are introduced"],
+  "requires_live": false,
+  "execution_policy": {
+    "goal": "Preserve an own enumerable __proto__ JSON key as canonical data without mutating the canonicalized output object's prototype.",
+    "non_goals": ["Do not change stableSerialize legacy compatibility semantics", "Do not redesign canonical serialization", "Do not add dependencies or abstractions", "Do not modify control-plane/v2 or provider/runtime code"],
+    "acceptance": ["canonicalizeJsonValue preserves an own enumerable __proto__ property as data", "canonicalized output retains Object.prototype rather than adopting the __proto__ value as its prototype", "existing authority identity behavior remains green and no new TypeScript diagnostics are introduced"],
+    "untouched": ["stableSerialize and legacy hash semantics", "canonicalSerialize output contract", "public provider identity rules", "control-plane/v2/**", "dependency manifests"],
+    "change_type": "localized_logic",
+    "risk_triggers": ["security", "schema", "persistence"],
+    "mode": "SYSTEMIC",
+    "model_tier": "STRONG",
+    "complexity_budget": {"max_files": 2, "max_new_dependencies": 0, "max_new_abstractions": 0, "max_new_config_layers": 0, "max_new_services": 0, "max_new_state_stores": 0},
+    "test_plan": {"existing_tests_first": true, "new_tests": [{"verifies": "Historical JavaScript __proto__ setter semantics cannot alter canonical JSON object structure", "existing_tests_would_miss": true}]},
+    "assurance_scope": ["pre-fix bug reproduction", "authority identity regression suite", "baseline-vs-post TypeScript diagnostics", "git diff --check", "post-execution complexity-budget reconciliation", "independent strong control-plane review"]
+  },
+  "target_commit": "789edef87549d4f173de03f73e54f5b6193c2e98",
+  "orchestrator_revision": 3
+}
