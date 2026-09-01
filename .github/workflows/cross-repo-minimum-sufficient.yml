@@ -1,25 +1,19 @@
 name: cross-repo-minimum-sufficient
-
 on:
   push:
     branches: [reconstruct/v6-full-composite]
     paths: ['delegation/cross-repo-minimum-sufficient/*.json']
-
 permissions:
   contents: read
-
 jobs:
   canonical-json-canary:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-          fetch-depth: 1
+        with: {persist-credentials: false, fetch-depth: 1}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: '3.13'
+        with: {python-version: '3.13'}
       - name: Resolve and validate mission.v2
         shell: bash
         run: |
@@ -33,26 +27,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target=/tmp/cos-target
-          git clone --filter=blob:none --no-checkout https://github.com/rotprods/cos-graph-engine.git "$target"
-          git -C "$target" checkout --detach 789edef87549d4f173de03f73e54f5b6193c2e98
-          test "$(git -C "$target" rev-parse HEAD)" = '789edef87549d4f173de03f73e54f5b6193c2e98'
-          git -C "$target" remote remove origin
-      - name: Reproduce the pre-fix defect
+          git clone --filter=blob:none --no-checkout https://github.com/rotprods/cos-graph-engine.git /tmp/cos-target
+          git -C /tmp/cos-target checkout --detach 789edef87549d4f173de03f73e54f5b6193c2e98
+          test "$(git -C /tmp/cos-target rev-parse HEAD)" = '789edef87549d4f173de03f73e54f5b6193c2e98'
+          git -C /tmp/cos-target remote remove origin
+      - name: Reproduce pre-fix defect
         shell: bash
         run: |
-          set -euo pipefail
-          cd /tmp/cos-target
-          npx --yes tsx@4.20.5 -e "import { canonicalizeJsonValue } from './packages/core/src/canonical-json.ts'; const input=JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}'); const out=canonicalizeJsonValue(input) as Record<string,unknown>; if (Object.prototype.hasOwnProperty.call(out,'__proto__')) throw new Error('bug already fixed'); if ((Object.getPrototypeOf(out) as any)?.polluted !== true) throw new Error('expected prototype mutation was not reproduced'); console.log('BASELINE_PROTO_DEFECT_REPRODUCED');"
+          set -euo pipefail; cd /tmp/cos-target
+          npx --yes tsx@4.20.5 -e "import { canonicalizeJsonValue } from './packages/core/src/canonical-json.ts'; const input=JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}'); const out=canonicalizeJsonValue(input) as Record<string,unknown>; if (Object.prototype.hasOwnProperty.call(out,'__proto__')) throw new Error('bug already fixed'); if ((Object.getPrototypeOf(out) as any)?.polluted !== true) throw new Error('defect not reproduced'); console.log('BASELINE_PROTO_DEFECT_REPRODUCED');"
       - name: Capture baseline TypeScript diagnostics
         shell: bash
         run: |
-          set -euo pipefail
-          cd /tmp/cos-target
-          set +e
-          npx --yes -p typescript@5.9.2 tsc --noEmit -p packages/core/tsconfig.json > /tmp/tsc-baseline.txt 2>&1
-          set -e
-          grep 'error TS' /tmp/tsc-baseline.txt | sort > /tmp/tsc-baseline-errors.txt || true
+          set -euo pipefail; cd /tmp/cos-target; set +e
+          npx --yes -p typescript@5.9.2 tsc --noEmit -p packages/core/tsconfig.json >/tmp/tsc-baseline.txt 2>&1
+          set -e; grep 'error TS' /tmp/tsc-baseline.txt | sort >/tmp/tsc-baseline-errors.txt || true
       - name: Apply minimum sufficient deterministic fix
         shell: bash
         run: |
@@ -60,31 +49,35 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root=Path('/tmp/cos-target')
-          src=root/'packages/core/src/canonical-json.ts'
-          text=src.read_text()
-          old='      output[normalizedKey] = child;'
-          new='''      Object.defineProperty(output, normalizedKey, {\n        value: child,\n        enumerable: true,\n        configurable: true,\n        writable: true,\n      });'''
-          assert text.count(old)==1, text.count(old)
-          src.write_text(text.replace(old,new))
-
-          test=root/'scripts/test-authority-identity.ts'
-          t=test.read_text()
-          old_import='''  IdentityRegistry,\n  canonicalHash128,'''
-          new_import='''  IdentityRegistry,\n  canonicalizeJsonValue,\n  canonicalHash128,'''
-          assert t.count(old_import)==1
-          t=t.replace(old_import,new_import)
-          anchor='''  check(canonicalSerialize(nullPrototype) === '{\"a\":1}', 'null-prototype plain objects are canonicalizable');\n'''
-          regression='''\n  const protoKeyInput = JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}') as Record<string, unknown>;\n  const protoKeyCanonical = canonicalizeJsonValue(protoKeyInput) as Record<string, unknown>;\n  check(Object.getPrototypeOf(protoKeyCanonical) === Object.prototype, '__proto__ JSON key does not mutate canonical object prototype');\n  check(Object.prototype.hasOwnProperty.call(protoKeyCanonical, '__proto__'), '__proto__ JSON key remains own canonical data');\n  check((protoKeyCanonical.__proto__ as Record<string, unknown>).polluted === true, '__proto__ canonical data value is preserved');\n'''
-          assert t.count(anchor)==1
-          test.write_text(t.replace(anchor,anchor+regression))
+          src=root/'packages/core/src/canonical-json.ts'; text=src.read_text()
+          old="      if (child !== undefined) output[normalizedKey] = child;"
+          new="""      if (child !== undefined) {
+            Object.defineProperty(output, normalizedKey, {
+              value: child,
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+          }"""
+          assert text.count(old)==1, text.count(old); src.write_text(text.replace(old,new))
+          test=root/'scripts/test-authority-identity.ts'; t=test.read_text()
+          old_import="  IdentityRegistry,\n  canonicalHash128,"; new_import="  IdentityRegistry,\n  canonicalizeJsonValue,\n  canonicalHash128,"
+          assert t.count(old_import)==1; t=t.replace(old_import,new_import)
+          anchor="  check(canonicalSerialize(nullPrototype) === '{\"a\":1}', 'null-prototype plain objects are canonicalizable');\n"
+          regression="""
+          const protoKeyInput = JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}') as Record<string, unknown>;
+          const protoKeyCanonical = canonicalizeJsonValue(protoKeyInput) as Record<string, unknown>;
+          check(Object.getPrototypeOf(protoKeyCanonical) === Object.prototype, '__proto__ JSON key does not mutate canonical object prototype');
+          check(Object.prototype.hasOwnProperty.call(protoKeyCanonical, '__proto__'), '__proto__ JSON key remains own canonical data');
+          check((protoKeyCanonical.__proto__ as Record<string, unknown>).polluted === true, '__proto__ canonical data value is preserved');
+          """
+          assert t.count(anchor)==1; test.write_text(t.replace(anchor,anchor+regression))
           PY
       - name: Enforce exact path scope and post-execution budget
         shell: bash
         run: |
-          set -euo pipefail
-          target=/tmp/cos-target
+          set -euo pipefail; target=/tmp/cos-target
           mapfile -t changed < <(git -C "$target" status --short | sed 's/^...//' | sort)
-          printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" -eq 2
           test "${changed[0]}" = 'packages/core/src/canonical-json.ts'
           test "${changed[1]}" = 'scripts/test-authority-identity.ts'
@@ -92,59 +85,32 @@ jobs:
       - name: Verify regression and existing authority contract
         shell: bash
         run: |
-          set -euo pipefail
-          cd /tmp/cos-target
+          set -euo pipefail; cd /tmp/cos-target
           npx --yes tsx@4.20.5 scripts/test-authority-identity.ts | tee /tmp/identity-test.log
-          npx --yes tsx@4.20.5 -e "import { canonicalizeJsonValue } from './packages/core/src/canonical-json.ts'; const input=JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}'); const out=canonicalizeJsonValue(input) as Record<string,unknown>; if (Object.getPrototypeOf(out)!==Object.prototype) throw new Error('prototype changed'); if (!Object.prototype.hasOwnProperty.call(out,'__proto__')) throw new Error('own __proto__ missing'); if ((out.__proto__ as any).polluted!==true) throw new Error('value lost'); console.log('PROTO_KEY_REGRESSION_PASS');"
+          npx --yes tsx@4.20.5 -e "import { canonicalizeJsonValue } from './packages/core/src/canonical-json.ts'; const input=JSON.parse('{\"__proto__\":{\"polluted\":true},\"safe\":\"ok\"}'); const out=canonicalizeJsonValue(input) as Record<string,unknown>; if (Object.getPrototypeOf(out)!==Object.prototype) throw new Error('prototype changed'); if (!Object.prototype.hasOwnProperty.call(out,'__proto__')) throw new Error('own key missing'); if ((out.__proto__ as any).polluted!==true) throw new Error('value lost'); console.log('PROTO_KEY_REGRESSION_PASS');"
           git diff --check
       - name: Assert no new TypeScript diagnostics
         shell: bash
         run: |
-          set -euo pipefail
-          cd /tmp/cos-target
-          set +e
-          npx --yes -p typescript@5.9.2 tsc --noEmit -p packages/core/tsconfig.json > /tmp/tsc-post.txt 2>&1
-          set -e
-          grep 'error TS' /tmp/tsc-post.txt | sort > /tmp/tsc-post-errors.txt || true
+          set -euo pipefail; cd /tmp/cos-target; set +e
+          npx --yes -p typescript@5.9.2 tsc --noEmit -p packages/core/tsconfig.json >/tmp/tsc-post.txt 2>&1
+          set -e; grep 'error TS' /tmp/tsc-post.txt | sort >/tmp/tsc-post-errors.txt || true
           diff -u /tmp/tsc-baseline-errors.txt /tmp/tsc-post-errors.txt
       - name: Build evidence artifact
         shell: bash
         run: |
-          set -euo pipefail
-          target=/tmp/cos-target
-          evidence=/tmp/cross-repo-minimum-sufficient-evidence
+          set -euo pipefail; target=/tmp/cos-target; evidence=/tmp/cross-repo-minimum-sufficient-evidence
           mkdir -p "$evidence/files"
           cp "$target/packages/core/src/canonical-json.ts" "$evidence/files/canonical-json.ts"
           cp "$target/scripts/test-authority-identity.ts" "$evidence/files/test-authority-identity.ts"
-          cp /tmp/BUDGET.json "$evidence/BUDGET.json"
-          cp /tmp/identity-test.log "$evidence/identity-test.log"
-          cp /tmp/tsc-baseline-errors.txt "$evidence/tsc-baseline-errors.txt"
-          cp /tmp/tsc-post-errors.txt "$evidence/tsc-post-errors.txt"
+          cp /tmp/BUDGET.json "$evidence/BUDGET.json"; cp /tmp/identity-test.log "$evidence/identity-test.log"
+          cp /tmp/tsc-baseline-errors.txt "$evidence/tsc-baseline-errors.txt"; cp /tmp/tsc-post-errors.txt "$evidence/tsc-post-errors.txt"
           git -C "$target" diff -- packages/core/src/canonical-json.ts scripts/test-authority-identity.ts > "$evidence/candidate.patch"
           python3 - <<'PY'
           from pathlib import Path
           import hashlib,json,os
-          e=Path('/tmp/cross-repo-minimum-sufficient-evidence')
-          mission=Path(os.environ['GITHUB_WORKSPACE'])/Path('/tmp/mission-path').read_text()
-          data={
-            'schema':'rotclaw.cross-repo-minimum-sufficient-evidence.v1',
-            'mission_id':'cos-canonical-proto-key-001',
-            'mission_sha256':hashlib.sha256(mission.read_bytes()).hexdigest(),
-            'orchestrator_commit':os.environ['GITHUB_SHA'],
-            'target_repository':'rotprods/cos-graph-engine',
-            'target_source_commit':'789edef87549d4f173de03f73e54f5b6193c2e98',
-            'changed_paths':['packages/core/src/canonical-json.ts','scripts/test-authority-identity.ts'],
-            'patch_sha256':hashlib.sha256((e/'candidate.patch').read_bytes()).hexdigest(),
-            'budget_sha256':hashlib.sha256((e/'BUDGET.json').read_bytes()).hexdigest(),
-            'baseline_defect':'REPRODUCED',
-            'regression':'PASS',
-            'authority_identity_suite':'PASS',
-            'new_typescript_diagnostics':0,
-            'execution':'DETERMINISTIC_TRUSTED_HARNESS',
-            'planner_reviewer_tier':'STRONG_CONTROL_PLANE',
-            'authority':'A1_NO_PUSH_NO_MERGE',
-            'promotion_authority':'CONTROL_PLANE_ONLY'
-          }
+          e=Path('/tmp/cross-repo-minimum-sufficient-evidence'); mission=Path(os.environ['GITHUB_WORKSPACE'])/Path('/tmp/mission-path').read_text()
+          data={'schema':'rotclaw.cross-repo-minimum-sufficient-evidence.v1','mission_id':'cos-canonical-proto-key-001','mission_sha256':hashlib.sha256(mission.read_bytes()).hexdigest(),'orchestrator_commit':os.environ['GITHUB_SHA'],'target_repository':'rotprods/cos-graph-engine','target_source_commit':'789edef87549d4f173de03f73e54f5b6193c2e98','changed_paths':['packages/core/src/canonical-json.ts','scripts/test-authority-identity.ts'],'patch_sha256':hashlib.sha256((e/'candidate.patch').read_bytes()).hexdigest(),'budget_sha256':hashlib.sha256((e/'BUDGET.json').read_bytes()).hexdigest(),'baseline_defect':'REPRODUCED','regression':'PASS','authority_identity_suite':'PASS','new_typescript_diagnostics':0,'execution':'DETERMINISTIC_TRUSTED_HARNESS','planner_reviewer_tier':'STRONG_CONTROL_PLANE','authority':'A1_NO_PUSH_NO_MERGE','promotion_authority':'CONTROL_PLANE_ONLY'}
           (e/'EVIDENCE.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
