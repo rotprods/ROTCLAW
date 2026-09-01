@@ -25,5 +25,5 @@
     "assurance_scope": ["pre-fix bug reproduction", "authority identity regression suite", "baseline-vs-post TypeScript diagnostics", "git diff --check", "post-execution complexity-budget reconciliation", "independent strong control-plane review"]
   },
   "target_commit": "789edef87549d4f173de03f73e54f5b6193c2e98",
-  "orchestrator_revision": 2
+  "orchestrator_revision": 3
 }
